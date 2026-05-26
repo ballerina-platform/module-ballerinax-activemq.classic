@@ -119,7 +119,22 @@ public class MessageMapper {
         while (propNames.hasMoreElements()) {
             String name = (String) propNames.nextElement();
             Object value = message.getObjectProperty(name);
-            props.put(StringUtils.fromString(name), value);
+            BString bName = StringUtils.fromString(name);
+            if (value instanceof String s) {
+                props.put(bName, StringUtils.fromString(s));
+            } else if (value instanceof Integer i) {
+                props.put(bName, (long) i);
+            } else if (value instanceof Long l) {
+                props.put(bName, l);
+            } else if (value instanceof Float f) {
+                props.put(bName, (double) f);
+            } else if (value instanceof Double d) {
+                props.put(bName, d);
+            } else if (value instanceof Boolean b) {
+                props.put(bName, b);
+            } else if (value != null) {
+                props.put(bName, StringUtils.fromString(value.toString()));
+            }
         }
         result.put(MESSAGE_PROPERTIES, props);
 
