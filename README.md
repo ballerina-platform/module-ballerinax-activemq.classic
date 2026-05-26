@@ -8,6 +8,49 @@
 
 Ballerina connector for the Apache ActiveMQ (Classic) message broker
 
+## Running the tests
+
+The test suite requires two ActiveMQ Classic broker instances — one for plain OpenWire tests and one for SSL/TLS tests. Both are provided via Docker Compose.
+
+### Start the test brokers
+
+```bash
+docker compose -f ballerina/tests/resources/docker-compose.yaml up -d
+```
+
+This starts:
+
+| Container | Port | Purpose |
+|---|---|---|
+| `activemq-test-server` | `61616` | Plain OpenWire — used by all non-SSL tests |
+| `activemq-ssl-test-server` | `61617` | SSL OpenWire — used by SSL tests; mounts a pre-generated keystore/truststore and a custom `activemq.xml` |
+
+Wait for both containers to become healthy before running tests (the plain broker exposes a web console healthcheck on port `8161`; the SSL broker checks for the process PID file):
+
+```bash
+docker compose -f ballerina/tests/resources/docker-compose.yaml ps
+```
+
+### Run the tests
+
+```bash
+cd ballerina
+bal test
+```
+
+To run only a specific group:
+
+```bash
+bal test --groups client   # Client send/receive tests
+bal test --groups ssl      # SSL connection tests
+```
+
+### Stop the brokers
+
+```bash
+docker compose -f ballerina/tests/resources/docker-compose.yaml down
+```
+
 ## Build from the source
 
 ### Setting up the prerequisites
