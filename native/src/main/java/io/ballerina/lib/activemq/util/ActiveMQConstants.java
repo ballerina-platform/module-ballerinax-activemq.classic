@@ -66,9 +66,10 @@ public interface ActiveMQConstants {
     BString KEY_STORE_PATH = StringUtils.fromString("path");
     BString KEY_STORE_PASSWORD = StringUtils.fromString("password");
 
-    // Ballerina record names
+    // Ballerina record/class names
     String BMESSAGE_NAME = "Message";
     String BCALLER_NAME = "Caller";
+    String BTRANSACTION_NAME = "Transaction";
 
     // Service config field names
     BString MESSAGE_SELECTOR = StringUtils.fromString("messageSelector");
@@ -81,6 +82,18 @@ public interface ActiveMQConstants {
     BString POLLING_INTERVAL = StringUtils.fromString("pollingInterval");
     BString RECEIVE_TIMEOUT = StringUtils.fromString("receiveTimeout");
     BString EXCLUSIVE = StringUtils.fromString("exclusive");
+
+    // Scheduled delivery field names (ActiveMQ Classic scheduler)
+    BString SCHEDULED_DELAY = StringUtils.fromString("scheduledDelay");
+    BString SCHEDULED_PERIOD = StringUtils.fromString("scheduledPeriod");
+    BString SCHEDULED_REPEAT = StringUtils.fromString("scheduledRepeat");
+    BString SCHEDULED_CRON = StringUtils.fromString("scheduledCron");
+
+    // ActiveMQ scheduler JMS property keys
+    String AMQ_SCHEDULED_DELAY = "AMQ_SCHEDULED_DELAY";
+    String AMQ_SCHEDULED_PERIOD = "AMQ_SCHEDULED_PERIOD";
+    String AMQ_SCHEDULED_REPEAT = "AMQ_SCHEDULED_REPEAT";
+    String AMQ_SCHEDULED_CRON = "AMQ_SCHEDULED_CRON";
 
     // Message record field names
     BString MESSAGE_ID = StringUtils.fromString("messageId");

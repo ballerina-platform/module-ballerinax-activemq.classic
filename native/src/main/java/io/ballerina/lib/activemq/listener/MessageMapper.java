@@ -25,7 +25,11 @@ import io.ballerina.runtime.api.values.BString;
 import jakarta.jms.BytesMessage;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
+import jakarta.jms.Queue;
+import jakarta.jms.TemporaryQueue;
+import jakarta.jms.TemporaryTopic;
 import jakarta.jms.TextMessage;
+import jakarta.jms.Topic;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
@@ -76,7 +80,7 @@ public class MessageMapper {
         }
 
         if (message.getJMSReplyTo() != null) {
-            result.put(REPLY_TO, StringUtils.fromString(message.getJMSReplyTo().toString()));
+            result.put(REPLY_TO, StringUtils.fromString(toDestinationString(message.getJMSReplyTo())));
         }
 
         if (message.getJMSDestination() != null) {
@@ -159,5 +163,27 @@ public class MessageMapper {
         }
         result.addNativeData(NATIVE_MESSAGE, message);
         return result;
+    }
+
+    /**
+     * Converts a JMS Destination to its string representation with explicit type prefixes so
+     * that {@code Client.toJmsDestination()} can reconstruct the correct destination type later.
+     * Temporary destinations use a {@code "temp-queue://"} or {@code "temp-topic://"} prefix;
+     * regular queues use {@code "queue://"} and topics use {@code "topic://"}.
+     */
+    static String toDestinationString(jakarta.jms.Destination dest) throws JMSException {
+        if (dest instanceof TemporaryQueue tq) {
+            return "temp-queue://" + tq.getQueueName();
+        }
+        if (dest instanceof TemporaryTopic tt) {
+            return "temp-topic://" + tt.getTopicName();
+        }
+        if (dest instanceof Queue q) {
+            return "queue://" + q.getQueueName();
+        }
+        if (dest instanceof Topic t) {
+            return "topic://" + t.getTopicName();
+        }
+        return dest.toString();
     }
 }

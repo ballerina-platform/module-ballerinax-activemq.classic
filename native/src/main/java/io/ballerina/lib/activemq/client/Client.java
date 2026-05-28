@@ -22,6 +22,7 @@ import io.ballerina.lib.activemq.listener.ConnectionConfig;
 import io.ballerina.lib.activemq.listener.MessageMapper;
 import io.ballerina.lib.activemq.listener.PrefetchPolicyConfig;
 import io.ballerina.lib.activemq.listener.RedeliveryPolicyConfig;
+import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.values.BArray;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
@@ -35,10 +36,13 @@ import jakarta.jms.Message;
 import jakarta.jms.MessageConsumer;
 import jakarta.jms.MessageProducer;
 import jakarta.jms.Session;
+import jakarta.jms.TemporaryQueue;
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.ActiveMQPrefetchPolicy;
 import org.apache.activemq.ActiveMQSslConnectionFactory;
 import org.apache.activemq.RedeliveryPolicy;
+import org.apache.activemq.command.ActiveMQTempQueue;
+import org.apache.activemq.command.ActiveMQTempTopic;
 
 import java.security.SecureRandom;
 import java.util.Objects;
@@ -48,6 +52,11 @@ import javax.net.ssl.KeyManager;
 import javax.net.ssl.TrustManager;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_CRON;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_DELAY;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_PERIOD;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_REPEAT;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.BTRANSACTION_NAME;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.CERT;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.CORRELATION_ID;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.EXPIRY_FIELD;
@@ -58,8 +67,13 @@ import static io.ballerina.lib.activemq.util.ActiveMQConstants.PERSISTENT_FIELD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.PRIORITY_FIELD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.PROPERTIES;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.REPLY_TO;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.SCHEDULED_CRON;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.SCHEDULED_DELAY;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.SCHEDULED_PERIOD;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.SCHEDULED_REPEAT;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.TYPE_FIELD;
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
+import static io.ballerina.lib.activemq.util.ModuleUtils.getModule;
 import static io.ballerina.lib.activemq.util.SslUtils.getKeyManagers;
 import static io.ballerina.lib.activemq.util.SslUtils.getTrustmanagers;
 
@@ -177,14 +191,18 @@ public final class Client {
 
     /**
      * Receives a message from the specified destination synchronously, waiting up to
-     * {@code timeoutMs} milliseconds. Returns null (Ballerina nil) on timeout.
+     * {@code timeoutMs} milliseconds. When {@code messageSelector} is non-null only
+     * messages whose properties match the JMS selector expression are returned.
+     * Returns null (Ballerina nil) on timeout.
      *
-     * @param bClient     the Ballerina client object
-     * @param destination the destination name; prefix with `"topic://"` for a JMS topic
-     * @param timeoutMs   maximum wait time in milliseconds
+     * @param bClient         the Ballerina client object
+     * @param destination     the destination name; prefix with {@code "topic://"} for a topic
+     * @param timeoutMs       maximum wait time in milliseconds
+     * @param messageSelector JMS selector expression (BString) or null/Ballerina-nil for none
      * @return BMap (Ballerina Message), null on timeout, or BError on failure
      */
-    public static Object receiveMessage(BObject bClient, BString destination, long timeoutMs) {
+    public static Object receiveMessage(BObject bClient, BString destination, long timeoutMs,
+                                        Object messageSelector) {
         Connection connection = (Connection) bClient.getNativeData(NATIVE_CONNECTION);
         if (connection == null) {
             return createError(ACTIVEMQ_ERROR, "ActiveMQ client is not initialized");
@@ -193,7 +211,10 @@ public final class Client {
             Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
             try {
                 Destination dest = toJmsDestination(session, destination.getValue());
-                MessageConsumer consumer = session.createConsumer(dest);
+                String selector = messageSelector instanceof BString bs ? bs.getValue() : null;
+                MessageConsumer consumer = selector != null
+                        ? session.createConsumer(dest, selector)
+                        : session.createConsumer(dest);
                 try {
                     Message jmsMsg = consumer.receive(timeoutMs);
                     if (jmsMsg == null) {
@@ -208,6 +229,81 @@ public final class Client {
             }
         } catch (JMSException e) {
             return createError(ACTIVEMQ_ERROR, "Failed to receive message: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Implements the request-reply pattern. Creates a temporary reply queue, sends
+     * the request message with its {@code JMSReplyTo} set to that queue, then blocks
+     * for a reply. The temporary queue is deleted before this method returns.
+     *
+     * @param bClient     the Ballerina client object
+     * @param destination the destination name for the request
+     * @param bMessage    the Ballerina Message record to send as the request
+     * @param timeoutMs   maximum wait time for the reply in milliseconds
+     * @return BMap (Ballerina Message reply), null on timeout, or BError on failure
+     */
+    public static Object sendRequest(BObject bClient, BString destination,
+                                     BMap<BString, Object> bMessage, long timeoutMs) {
+        Connection connection = (Connection) bClient.getNativeData(NATIVE_CONNECTION);
+        if (connection == null) {
+            return createError(ACTIVEMQ_ERROR, "ActiveMQ client is not initialized");
+        }
+        try {
+            Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+            try {
+                TemporaryQueue replyQueue = session.createTemporaryQueue();
+                try {
+                    MessageConsumer replyConsumer = session.createConsumer(replyQueue);
+                    try {
+                        Destination dest = toJmsDestination(session, destination.getValue());
+                        MessageProducer producer = session.createProducer(dest);
+                        try {
+                            Message jmsMsg = toJmsMessage(session, bMessage);
+                            jmsMsg.setJMSReplyTo(replyQueue);
+                            producer.send(jmsMsg, getDeliveryMode(bMessage),
+                                    getPriority(bMessage), getTTL(bMessage));
+                        } finally {
+                            producer.close();
+                        }
+                        Message reply = replyConsumer.receive(timeoutMs);
+                        if (reply == null) {
+                            return null; // timeout — Ballerina nil
+                        }
+                        return MessageMapper.toBallerinaMessage(reply);
+                    } finally {
+                        replyConsumer.close();
+                    }
+                } finally {
+                    replyQueue.delete();
+                }
+            } finally {
+                session.close();
+            }
+        } catch (JMSException e) {
+            return createError(ACTIVEMQ_ERROR, "Failed to send request: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Opens a new transacted JMS session and wraps it in a Ballerina Transaction object.
+     * All sends on the transaction are buffered until commit() is called.
+     *
+     * @param bClient the Ballerina client object
+     * @return a Ballerina Transaction object or BError on failure
+     */
+    public static Object beginTransaction(BObject bClient) {
+        Connection connection = (Connection) bClient.getNativeData(NATIVE_CONNECTION);
+        if (connection == null) {
+            return createError(ACTIVEMQ_ERROR, "ActiveMQ client is not initialized");
+        }
+        try {
+            Session session = connection.createSession(true, Session.SESSION_TRANSACTED);
+            BObject bTransaction = ValueCreator.createObjectValue(getModule(), BTRANSACTION_NAME);
+            bTransaction.addNativeData(Transaction.NATIVE_SESSION, session);
+            return bTransaction;
+        } catch (JMSException e) {
+            return createError(ACTIVEMQ_ERROR, "Failed to begin transaction: " + e.getMessage(), e);
         }
     }
 
@@ -232,23 +328,43 @@ public final class Client {
         return null;
     }
 
+    // Destination string prefixes — keep in sync with MessageMapper.toDestinationString().
+    static final String QUEUE_PREFIX = "queue://";
+    static final String TEMP_QUEUE_PREFIX = "temp-queue://";
+    static final String TEMP_TOPIC_PREFIX = "temp-topic://";
+
     /**
-     * Creates a JMS Destination from a destination string. Names prefixed with {@code "topic://"}
-     * resolve to a JMS Topic (with the prefix stripped); all other names resolve to a JMS Queue.
+     * Creates a JMS Destination from a destination string. Recognised prefixes:
+     * <ul>
+     *   <li>{@code "topic://"} — JMS Topic</li>
+     *   <li>{@code "temp-queue://"} — ActiveMQ TemporaryQueue (used for request-reply)</li>
+     *   <li>{@code "temp-topic://"} — ActiveMQ TemporaryTopic</li>
+     *   <li>{@code "queue://"} — regular JMS Queue (prefix stripped)</li>
+     *   <li>anything else — treated as a plain queue name</li>
+     * </ul>
      */
-    private static Destination toJmsDestination(Session session, String dest) throws JMSException {
+    static Destination toJmsDestination(Session session, String dest) throws JMSException {
         if (dest.startsWith(TOPIC_PREFIX)) {
             return session.createTopic(dest.substring(TOPIC_PREFIX.length()));
+        }
+        if (dest.startsWith(TEMP_QUEUE_PREFIX)) {
+            return new ActiveMQTempQueue(dest.substring(TEMP_QUEUE_PREFIX.length()));
+        }
+        if (dest.startsWith(TEMP_TOPIC_PREFIX)) {
+            return new ActiveMQTempTopic(dest.substring(TEMP_TOPIC_PREFIX.length()));
+        }
+        if (dest.startsWith(QUEUE_PREFIX)) {
+            return session.createQueue(dest.substring(QUEUE_PREFIX.length()));
         }
         return session.createQueue(dest);
     }
 
     /**
-     * Converts a Ballerina Message record to a JMS BytesMessage, mapping all relevant headers and
-     * custom properties.
+     * Converts a Ballerina Message record to a JMS BytesMessage, mapping all relevant headers,
+     * custom properties, and ActiveMQ scheduler properties when present.
      */
     @SuppressWarnings("unchecked")
-    private static Message toJmsMessage(Session session, BMap<BString, Object> bMsg) throws JMSException {
+    static Message toJmsMessage(Session session, BMap<BString, Object> bMsg) throws JMSException {
         BArray payload = (BArray) bMsg.get(MESSAGE_PAYLOAD);
         BytesMessage jmsMsg = session.createBytesMessage();
         jmsMsg.writeBytes(payload.getBytes());
@@ -289,10 +405,29 @@ public final class Client {
             }
         }
 
+        // Scheduled delivery — ActiveMQ Classic scheduler properties.
+        // These take effect only when schedulerSupport="true" is set in the broker.
+        Object scheduledDelay = bMsg.get(SCHEDULED_DELAY);
+        if (scheduledDelay instanceof Long l) {
+            jmsMsg.setLongProperty(AMQ_SCHEDULED_DELAY, l);
+        }
+        Object scheduledPeriod = bMsg.get(SCHEDULED_PERIOD);
+        if (scheduledPeriod instanceof Long l) {
+            jmsMsg.setLongProperty(AMQ_SCHEDULED_PERIOD, l);
+        }
+        Object scheduledRepeat = bMsg.get(SCHEDULED_REPEAT);
+        if (scheduledRepeat instanceof Long l) {
+            jmsMsg.setIntProperty(AMQ_SCHEDULED_REPEAT, l.intValue());
+        }
+        Object scheduledCron = bMsg.get(SCHEDULED_CRON);
+        if (scheduledCron instanceof BString bs) {
+            jmsMsg.setStringProperty(AMQ_SCHEDULED_CRON, bs.getValue());
+        }
+
         return jmsMsg;
     }
 
-    private static int getDeliveryMode(BMap<BString, Object> bMsg) {
+    static int getDeliveryMode(BMap<BString, Object> bMsg) {
         Object persistent = bMsg.get(PERSISTENT_FIELD);
         if (persistent instanceof Boolean b) {
             return b ? DeliveryMode.PERSISTENT : DeliveryMode.NON_PERSISTENT;
@@ -300,7 +435,7 @@ public final class Client {
         return Message.DEFAULT_DELIVERY_MODE;
     }
 
-    private static int getPriority(BMap<BString, Object> bMsg) {
+    static int getPriority(BMap<BString, Object> bMsg) {
         if (bMsg.containsKey(PRIORITY_FIELD)) {
             Object priority = bMsg.get(PRIORITY_FIELD);
             if (priority instanceof Long l) {
@@ -310,7 +445,7 @@ public final class Client {
         return Message.DEFAULT_PRIORITY;
     }
 
-    private static long getTTL(BMap<BString, Object> bMsg) {
+    static long getTTL(BMap<BString, Object> bMsg) {
         if (bMsg.containsKey(EXPIRY_FIELD)) {
             Object expiry = bMsg.get(EXPIRY_FIELD);
             if (expiry instanceof Long l) {
