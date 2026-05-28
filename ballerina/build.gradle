@@ -92,46 +92,64 @@ tasks.register('commitTomlFiles') {
     }
 }
 
-tasks.register('startActiveMQServer') {
+tasks.register('startActiveMQBroker') {
     doLast {
-        if (!Os.isFamily(Os.FAMILY_WINDOWS)) {
-            def stdOut = new ByteArrayOutputStream()
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+            println "ActiveMQ integration tests skipped: Docker is not available on Windows."
+            return
+        }
+        def dockerCheck = exec {
+            commandLine 'sh', '-c', 'docker info > /dev/null 2>&1'
+            ignoreExitValue true
+        }
+        if (dockerCheck.exitValue != 0) {
+            println "ActiveMQ integration tests skipped: Docker is not available."
+            return
+        }
+        def stdOut = new ByteArrayOutputStream()
+        exec {
+            commandLine 'sh', '-c', "docker ps --filter name=activemq-test-server"
+            standardOutput = stdOut
+        }
+        if (!stdOut.toString().contains("activemq-test-server")) {
+            println "Starting ActiveMQ broker and waiting for it to be healthy..."
             exec {
-                commandLine 'sh', '-c', "docker ps --filter name=activemq-test-server"
+                commandLine 'sh', '-c', "docker compose -f tests/resources/docker-compose.yaml up --wait"
                 standardOutput = stdOut
             }
-            if (!stdOut.toString().contains("activemq-test-server")) {
-                println "Starting ActiveMQ server and waiting for it to be healthy..."
-                exec {
-                    commandLine 'sh', '-c', "docker compose -f tests/resources/docker-compose.yaml up --wait"
-                    standardOutput = stdOut
-                }
-                println "ActiveMQ server is ready."
-            } else {
-                println "ActiveMQ server is already running."
-            }
+            println "ActiveMQ broker is ready."
+        } else {
+            println "ActiveMQ broker is already running."
         }
     }
 }
 
-tasks.register('stopActiveMQServer') {
+tasks.register('stopActiveMQBroker') {
     doLast {
-        if (!Os.isFamily(Os.FAMILY_WINDOWS)) {
-            def stdOut = new ByteArrayOutputStream()
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+            return
+        }
+        def dockerCheck = exec {
+            commandLine 'sh', '-c', 'docker info > /dev/null 2>&1'
+            ignoreExitValue true
+        }
+        if (dockerCheck.exitValue != 0) {
+            return
+        }
+        def stdOut = new ByteArrayOutputStream()
+        exec {
+            commandLine 'sh', '-c', "docker ps --filter name=activemq-test-server"
+            standardOutput = stdOut
+        }
+        if (stdOut.toString().contains("activemq-test-server")) {
+            println "Stopping ActiveMQ broker."
             exec {
-                commandLine 'sh', '-c', "docker ps --filter name=activemq-test-server"
+                commandLine 'sh', '-c', "docker compose -f tests/resources/docker-compose.yaml down"
                 standardOutput = stdOut
             }
-            if (stdOut.toString().contains("activemq-test-server")) {
-                println "Stopping ActiveMQ server."
-                exec {
-                    commandLine 'sh', '-c', "docker compose -f tests/resources/docker-compose.yaml down"
-                    standardOutput = stdOut
-                }
-                println stdOut.toString()
-            } else {
-                println "ActiveMQ server is not started."
-            }
+            println stdOut.toString()
+        } else {
+            println "ActiveMQ broker is not running."
         }
     }
 }
@@ -140,8 +158,8 @@ build.dependsOn copyToLib
 build.dependsOn ":${packageName}-native:build"
 
 test.dependsOn ":${packageName}-native:build"
-test.dependsOn "startActiveMQServer"
-test.finalizedBy "stopActiveMQServer"
+test.dependsOn "startActiveMQBroker"
+test.finalizedBy "stopActiveMQBroker"
 
 publish.dependsOn build
 publishToMavenLocal.dependsOn build

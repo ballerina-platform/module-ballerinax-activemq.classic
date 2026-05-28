@@ -1,15 +1,18 @@
 services:
   activemq:
-    image: 'apache/activemq-classic:6.0.0'
+    image: 'apache/activemq-classic:6.2.0'
     container_name: activemq-test-server
     ports:
       - '61616:61616'  # OpenWire protocol
       - '8161:8161'    # Web console
     environment:
+      - ACTIVEMQ_BROKER_NAME=testbroker
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin
       - ACTIVEMQ_MIN_MEMORY=512
       - ACTIVEMQ_MAX_MEMORY=2048
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8161/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f -u admin:admin http://localhost:8161/admin/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -17,12 +20,15 @@ services:
       - activemq-test-network
 
   activemq-ssl:
-    image: 'apache/activemq-classic:6.0.0'
+    image: 'apache/activemq-classic:6.2.0'
     container_name: activemq-ssl-test-server
     ports:
       - '61617:61617'  # SSL OpenWire protocol
       - '8162:8161'    # Web console
     environment:
+      - ACTIVEMQ_BROKER_NAME=testbroker-ssl
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin
       - ACTIVEMQ_MIN_MEMORY=512
       - ACTIVEMQ_MAX_MEMORY=2048
     volumes:

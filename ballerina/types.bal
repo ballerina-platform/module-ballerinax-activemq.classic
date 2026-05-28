@@ -110,6 +110,15 @@ public type CertKey record {|
 # + format - Format identifier of the message payload (e.g., "text", "binary", "json")
 # + properties - Application-specific custom properties attached to the message
 # + payload - The message content as a byte array
+# + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
+#                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.
+# + scheduledPeriod - Period in milliseconds between successive redeliveries. Use together
+#                    with `scheduledRepeat` for periodic delivery.
+# + scheduledRepeat - Number of additional deliveries after the first. Use `-1` for
+#                    infinite repetition. Requires `scheduledPeriod` to be set.
+# + scheduledCron - Cron expression controlling the delivery schedule
+#                  (for example, `"0 0 12 * * ?"`). Overrides delay/period/repeat when set.
+#                  Requires the broker scheduler to be enabled.
 public type Message record {|
     string messageId;
     int timestamp?;
@@ -126,6 +135,10 @@ public type Message record {|
     string format?;
     map<anydata> properties?;
     byte[] payload;
+    int scheduledDelay?;
+    int scheduledPeriod?;
+    int scheduledRepeat?;
+    string scheduledCron?;
 |};
 
 # Defines the supported JMS message consumer types for ActiveMQ topic subscriptions.

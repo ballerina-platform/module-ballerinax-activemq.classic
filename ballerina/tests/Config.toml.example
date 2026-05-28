@@ -1,0 +1,4 @@
+[ballerinax.activemq]
+brokerUrl = "tcp://localhost:61616"
+username  = "admin"
+password  = "admin"

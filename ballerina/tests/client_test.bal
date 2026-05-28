@@ -267,3 +267,241 @@ isolated function testClientBrokerPopulatedFields() returns error? {
             "destination should contain the queue name");
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 10: receiveMessage with a message selector — only matching messages returned
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "selector"]
+}
+isolated function testClientReceiveWithSelector() returns error? {
+    Client mqClient = check new (BROKER_URL);
+    // Send two messages: one with region=APAC and one with region=EMEA.
+    check mqClient->sendMessage("client.test.selector.queue", {
+        messageId: "sel-apac",
+        payload: "APAC order".toBytes(),
+        properties: {"region": "APAC"}
+    });
+    check mqClient->sendMessage("client.test.selector.queue", {
+        messageId: "sel-emea",
+        payload: "EMEA order".toBytes(),
+        properties: {"region": "EMEA"}
+    });
+
+    // Receive with selector — should get only APAC even though EMEA arrived first.
+    Message? apacMsg = check mqClient->receiveMessage(
+        "client.test.selector.queue", 5000, "region = 'APAC'");
+    // Drain the EMEA message that was skipped.
+    Message? emeaMsg = check mqClient->receiveMessage(
+        "client.test.selector.queue", 3000, "region = 'EMEA'");
+    check mqClient->close();
+
+    test:assertTrue(apacMsg is Message, "should receive the APAC message via selector");
+    if apacMsg is Message {
+        string content = check string:fromBytes(apacMsg.payload);
+        test:assertEquals(content, "APAC order", "selector should return only the matching message");
+    }
+    test:assertTrue(emeaMsg is Message, "EMEA message should also be receivable with its selector");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 11: receiveMessage without selector still works (backward compat)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "selector"]
+}
+isolated function testClientReceiveWithoutSelector() returns error? {
+    Client mqClient = check new (BROKER_URL);
+    check mqClient->sendMessage("client.test.no.selector.queue", {
+        messageId: "no-sel-1",
+        payload: "no selector".toBytes()
+    });
+    Message? msg = check mqClient->receiveMessage("client.test.no.selector.queue", 5000);
+    check mqClient->close();
+    test:assertTrue(msg is Message, "receiveMessage without selector should still work");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 12: Transaction — commit delivers all messages atomically
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientTransactionCommit() returns error? {
+    Client mqClient = check new (BROKER_URL);
+
+    Transaction tx = check mqClient->'transaction();
+    check tx->sendMessage("client.tx.commit.queue", {
+        messageId: "tx-1",
+        payload: "tx message 1".toBytes()
+    });
+    check tx->sendMessage("client.tx.commit.queue", {
+        messageId: "tx-2",
+        payload: "tx message 2".toBytes()
+    });
+    check tx->'commit();
+    check tx->close();
+
+    // Both messages must now be visible.
+    Message? msg1 = check mqClient->receiveMessage("client.tx.commit.queue", 5000);
+    Message? msg2 = check mqClient->receiveMessage("client.tx.commit.queue", 5000);
+    check mqClient->close();
+
+    test:assertTrue(msg1 is Message, "first committed message should be received");
+    test:assertTrue(msg2 is Message, "second committed message should be received");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 13: Transaction — rollback discards all messages
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientTransactionRollback() returns error? {
+    Client mqClient = check new (BROKER_URL);
+
+    Transaction tx = check mqClient->'transaction();
+    check tx->sendMessage("client.tx.rollback.queue", {
+        messageId: "tx-rb-1",
+        payload: "will be discarded".toBytes()
+    });
+    check tx->'rollback();
+    check tx->close();
+
+    // Queue must be empty — rollback discarded the message.
+    Message? msg = check mqClient->receiveMessage("client.tx.rollback.queue", 2000);
+    check mqClient->close();
+    test:assertTrue(msg is (), "rolled-back message must not be delivered");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 14: Transaction — close without commit implicitly rolls back
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientTransactionCloseRollsBack() returns error? {
+    Client mqClient = check new (BROKER_URL);
+
+    Transaction tx = check mqClient->'transaction();
+    check tx->sendMessage("client.tx.close.queue", {
+        messageId: "tx-close-1",
+        payload: "implicit rollback".toBytes()
+    });
+    check tx->close(); // close without commit — broker must discard the message
+
+    Message? msg = check mqClient->receiveMessage("client.tx.close.queue", 2000);
+    check mqClient->close();
+    test:assertTrue(msg is (), "closing a transaction without committing must roll back");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 15: sendRequest — responder sends reply to JMSReplyTo; caller receives it
+// ─────────────────────────────────────────────────────────────────────────────
+
+isolated int rrResponderCount = 0;
+
+@test:Config {
+    groups: ["client", "request-reply"]
+}
+function testClientSendRequest() returns error? {
+    lock { rrResponderCount = 0; }
+
+    // Responder: receives requests and sends a reply to the replyTo destination,
+    // echoing the request's correlationId so the caller can match the reply.
+    Listener responderListener = check new (BROKER_URL);
+    Service responderSvc = @ServiceConfig {
+        queueName: "client.rr.request.queue",
+        pollingInterval: 1,
+        receiveTimeout: 2
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock { rrResponderCount += 1; }
+            string? replyTo = message.replyTo;
+            if replyTo is string {
+                Client responder = check new (BROKER_URL);
+                check responder->sendMessage(replyTo, {
+                    messageId: "rr-reply-1",
+                    correlationId: message.correlationId,
+                    payload: "Reply: received".toBytes()
+                });
+                check responder->close();
+            }
+        }
+    };
+    check responderListener.attach(responderSvc, "rr-responder-svc");
+    check responderListener.'start();
+
+    runtime:sleep(1);
+
+    Client requester = check new (BROKER_URL);
+    // Use correlationId (a JMS header) to tag the request for matching with the reply.
+    Message? reply = check requester->sendRequest("client.rr.request.queue", {
+        messageId: "rr-req-1",
+        correlationId: "rr-corr-id-001",
+        payload: "Request".toBytes()
+    }, 10000);
+    check requester->close();
+
+    check responderListener.gracefulStop();
+
+    test:assertTrue(reply is Message, "sendRequest should receive a reply within the timeout");
+    if reply is Message {
+        string content = check string:fromBytes(reply.payload);
+        test:assertEquals(content, "Reply: received", "reply payload should match what the responder sent");
+        test:assertEquals(reply.correlationId, "rr-corr-id-001",
+            "reply correlationId should echo the request correlationId");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 16: sendRequest — returns () when no responder replies within timeout
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "request-reply"]
+}
+isolated function testClientSendRequestTimeout() returns error? {
+    Client mqClient = check new (BROKER_URL);
+    // Nobody is listening on this queue, so the reply never arrives.
+    Message? reply = check mqClient->sendRequest("client.rr.nobody.queue", {
+        messageId: "rr-timeout-1",
+        payload: "orphan request".toBytes()
+    }, 1500);
+    check mqClient->close();
+    test:assertTrue(reply is (), "sendRequest should return () when no reply arrives within the timeout");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 17: Scheduled delivery — fields are accepted without error
+// (Full delay verification requires schedulerSupport="true" in activemq.xml)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@test:Config {
+    groups: ["client", "scheduler"],
+    enable: false
+}
+function testClientScheduledDelivery() returns error? {
+    Client mqClient = check new (BROKER_URL);
+    // Schedule delivery 4 seconds in the future.
+    check mqClient->sendMessage("client.scheduled.queue", {
+        messageId: "sched-1",
+        payload: "scheduled message".toBytes(),
+        scheduledDelay: 4000
+    });
+
+    // Immediate receive must time out — message is not yet due.
+    Message? early = check mqClient->receiveMessage("client.scheduled.queue", 1000);
+    test:assertTrue(early is (), "message should not be delivered before the scheduled delay");
+
+    // Wait for the scheduler to release the message.
+    runtime:sleep(6);
+    Message? msg = check mqClient->receiveMessage("client.scheduled.queue", 3000);
+    check mqClient->close();
+    test:assertTrue(msg is Message, "message should be delivered after the scheduled delay");
+}
