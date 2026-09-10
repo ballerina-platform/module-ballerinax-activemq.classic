@@ -18,10 +18,13 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import io.ballerina.lib.activemq.util.ActiveMQDatabindingException;
+import io.ballerina.lib.activemq.util.MessageMapper;
 import io.ballerina.runtime.api.Runtime;
 import io.ballerina.runtime.api.concurrent.StrandMetadata;
 import io.ballerina.runtime.api.creators.ValueCreator;
 import io.ballerina.runtime.api.types.Parameter;
+import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.RemoteMethodType;
 import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.types.TypeTags;
@@ -42,13 +45,7 @@ import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_MESSAGE_METHOD
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 import static io.ballerina.lib.activemq.util.ModuleUtils.getModule;
 
-/**
- * Dispatches JMS messages to the Ballerina ActiveMQ service. This class manages the invocation
- * of service methods (onMessage and onError) in the Ballerina runtime using virtual threads for
- * concurrent message processing.
- *
- * @since 0.1.0
- */
+/** Dispatches JMS messages to the service; onMessage runs on the calling thread (ActiveMQ ties redelivery to it). */
 public class MessageDispatcher {
     private static final PrintStream ERR_OUT = System.err;
 
@@ -70,40 +67,42 @@ public class MessageDispatcher {
         this.session = session;
     }
 
-    /**
-     * Dispatches a JMS message to the Ballerina service's onMessage method. This method spawns a
-     * virtual thread to invoke the Ballerina service method asynchronously, allowing concurrent
-     * message processing.
-     *
-     * @param message        the JMS message to dispatch
-     * @param onMsgCallback  the callback to notify when message processing completes
-     */
-    public void onMessage(Message message, OnMsgCallback onMsgCallback) {
-        Thread.startVirtualThread(() -> {
-            try {
-                boolean isConcurrentSafe = nativeService.isOnMessageMethodIsolated();
-                StrandMetadata metadata = new StrandMetadata(isConcurrentSafe, null);
-                Object[] params = getOnMessageParams(message);
-                Object result = ballerinaRuntime.callMethod(
-                        nativeService.getConsumerService(), ON_MESSAGE_METHOD, metadata, params);
-                onMsgCallback.notifySuccess(result);
-            } catch (BError e) {
-                onMsgCallback.notifyFailure(e);
-                onError(e);
-            } catch (JMSException e) {
-                onError(e);
-            }
-        });
+    /** Associates this dispatcher with its MessageReceiver, so a failing onError handler can stop delivery. */
+    public void setReceiver(MessageReceiver receiver) {
+        this.onErrorCallback.setReceiver(receiver);
     }
 
-    /**
-     * Prepares the parameter array for invoking the Ballerina onMessage method. Matches parameters
-     * by type (Caller object or Message record) and populates them accordingly.
-     *
-     * @param message  the JMS message
-     * @return array of arguments for the Ballerina method invocation
-     * @throws JMSException if message conversion fails
-     */
+    /** Dispatches a JMS message to onMessage; a returned error goes to onError, a panic is only logged. */
+    public void onMessage(Message message) {
+        try {
+            boolean isConcurrentSafe = nativeService.isOnMessageMethodIsolated();
+            StrandMetadata metadata = new StrandMetadata(isConcurrentSafe, null);
+            Object[] params = getOnMessageParams(message);
+            Object result = ballerinaRuntime.callMethod(
+                    nativeService.getConsumerService(), ON_MESSAGE_METHOD, metadata, params);
+            if (result instanceof BError bError) {
+                onError(bError);
+            }
+        } catch (BError bError) {
+            bError.printStackTrace();
+        } catch (JMSException e) {
+            onError(e);
+            throw new ActiveMQMessageProcessingException(e);
+        } catch (ActiveMQDatabindingException e) {
+            onError(e);
+            throw new ActiveMQMessageProcessingException(e);
+        }
+    }
+
+    private static final class ActiveMQMessageProcessingException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        ActiveMQMessageProcessingException(Throwable cause) {
+            super(cause);
+        }
+    }
+
+    /** Builds the onMessage argument array, converting Message via the same typed binding receive() uses. */
     private Object[] getOnMessageParams(Message message) throws JMSException {
         Parameter[] parameters = this.nativeService.getOnMessageMethod().getParameters();
         Object[] args = new Object[parameters.length];
@@ -115,7 +114,7 @@ public class MessageDispatcher {
                     args[idx++] = getCaller();
                     break;
                 case TypeTags.RECORD_TYPE_TAG:
-                    args[idx++] = MessageMapper.toBallerinaMessage(message);
+                    args[idx++] = MessageMapper.toBallerinaMessage(message, (RecordType) referredType);
                     break;
                 default:
                     throw new IllegalStateException("Unsupported parameter type: " + referredType);
@@ -149,11 +148,11 @@ public class MessageDispatcher {
                 ERR_OUT.println("Unexpected error occurred while message processing: " + t.getMessage());
                 Optional<RemoteMethodType> onError = nativeService.getOnError();
                 if (onError.isEmpty()) {
-                    // No error handler defined in the service, print stack trace
                     t.printStackTrace();
                     return;
                 }
-                BError error = createError("Error", "Failed to fetch the message", t);
+                String message = t.getMessage() != null ? t.getMessage() : "Failed to fetch the message";
+                BError error = createError("Error", message, t);
                 boolean isConcurrentSafe = nativeService.isOnErrorMethodIsolated();
                 StrandMetadata metadata = new StrandMetadata(isConcurrentSafe, null);
                 Object result = ballerinaRuntime.callMethod(

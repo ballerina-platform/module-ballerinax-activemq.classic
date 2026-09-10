@@ -20,7 +20,10 @@ package io.ballerina.lib.activemq.listener;
 
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.creators.ValueCreator;
+import io.ballerina.runtime.api.flags.SymbolFlags;
+import io.ballerina.runtime.api.types.Field;
 import io.ballerina.runtime.api.types.Parameter;
+import io.ballerina.runtime.api.types.RecordType;
 import io.ballerina.runtime.api.types.RemoteMethodType;
 import io.ballerina.runtime.api.types.ServiceType;
 import io.ballerina.runtime.api.types.Type;
@@ -31,12 +34,14 @@ import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
 
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.BCALLER_NAME;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.BMESSAGE_NAME;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.MESSAGE_PAYLOAD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_ERROR_METHOD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_MESSAGE_METHOD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.QUEUE_NAME;
@@ -53,7 +58,7 @@ import static io.ballerina.runtime.api.constants.RuntimeConstants.VERSION_SEPARA
  * @since 0.1.0
  */
 public class Service {
-    private static final Type MSG_TYPE = ValueCreator.createRecordValue(getModule(), BMESSAGE_NAME)
+    static final Type MSG_TYPE = ValueCreator.createRecordValue(getModule(), BMESSAGE_NAME)
             .getType();
     private static final Type CALLER_TYPE = ValueCreator.createObjectValue(getModule(), BCALLER_NAME).getOriginalType();
     private static final Type ERROR_TYPE = TypeCreator.createErrorType("Error", getModule());
@@ -98,15 +103,21 @@ public class Service {
             throw createError("Error", "ActiveMQ service must have exactly one or two remote methods.");
         }
 
+        boolean hasOnMessage = false;
         for (RemoteMethodType remoteMethod: remoteMethods) {
             String remoteMethodName = remoteMethod.getName();
             if (ON_MESSAGE_METHOD.equals(remoteMethodName)) {
                 validateOnMessageMethod(remoteMethod);
+                hasOnMessage = true;
             } else if (ON_ERROR_METHOD.equals(remoteMethodName)) {
                 validateOnErrorMethod(remoteMethod);
             } else {
                 throw createError("Error", String.format("Invalid remote method name: %s.", remoteMethodName));
             }
+        }
+
+        if (!hasOnMessage) {
+            throw createError("Error", "ActiveMQ service must declare an 'onMessage' remote method.");
         }
     }
 
@@ -120,7 +131,7 @@ public class Service {
         Parameter message = null;
         for (Parameter parameter : parameters) {
             Type parameterType = TypeUtils.getReferredType(parameter.type);
-            if (TypeUtils.isSameType(MSG_TYPE, parameterType)) {
+            if (isMessageCompatibleType(parameterType)) {
                 message = parameter;
                 continue;
             }
@@ -128,25 +139,61 @@ public class Service {
                 continue;
             }
             throw createError("Error",
-                    "onMessage method parameters must be of type 'activemq:Message' or 'activemq:Caller'.");
+                    "onMessage method parameters must be of type 'classic:Message' (or a record type that " +
+                            "includes it, narrowing 'payload') or 'classic:Caller'.");
         }
 
         if (Objects.isNull(message)) {
-            throw createError("Error", "Required parameter 'activemq:Message' cannot be found.");
+            throw createError("Error", "Required parameter 'classic:Message' cannot be found.");
         }
+    }
+
+    /** Checks candidateType is classic:Message, or a record narrowing only its payload field's type. */
+    private static boolean isMessageCompatibleType(Type candidateType) {
+        if (TypeUtils.isSameType(MSG_TYPE, candidateType)) {
+            return true;
+        }
+        if (!(candidateType instanceof RecordType candidateRecord)
+                || !(TypeUtils.getReferredType(MSG_TYPE) instanceof RecordType msgRecord)) {
+            return false;
+        }
+        Map<String, Field> candidateFields = candidateRecord.getFields();
+        for (Map.Entry<String, Field> entry : msgRecord.getFields().entrySet()) {
+            if (MESSAGE_PAYLOAD.getValue().equals(entry.getKey())) {
+                continue;
+            }
+            Field candidateField = candidateFields.get(entry.getKey());
+            if (candidateField == null || !TypeUtils.isSameType(
+                    TypeUtils.getReferredType(entry.getValue().getFieldType()),
+                    TypeUtils.getReferredType(candidateField.getFieldType()))) {
+                return false;
+            }
+            boolean msgFieldOptional = SymbolFlags.isFlagOn(entry.getValue().getFlags(), SymbolFlags.OPTIONAL);
+            boolean candidateFieldRequired = !SymbolFlags.isFlagOn(candidateField.getFlags(), SymbolFlags.OPTIONAL);
+            if (msgFieldOptional && candidateFieldRequired) {
+                return false;
+            }
+        }
+        for (Map.Entry<String, Field> entry : candidateFields.entrySet()) {
+            if (!msgRecord.getFields().containsKey(entry.getKey())
+                    && !SymbolFlags.isFlagOn(entry.getValue().getFlags(), SymbolFlags.OPTIONAL)) {
+                return false;
+            }
+        }
+        return candidateFields.containsKey(MESSAGE_PAYLOAD.getValue());
     }
 
     private static void validateOnErrorMethod(RemoteMethodType onErrorMethod) {
         if (onErrorMethod.getParameters().length != 1) {
             throw createError("Error",
-                    "onError method must have exactly one parameter of type 'activemq:Error'.");
+                    "onError method must have exactly one parameter of type 'classic:Error'.");
         }
 
         Parameter parameter = onErrorMethod.getParameters()[0];
         Type parameterType = TypeUtils.getReferredType(parameter.type);
         if (!TypeUtils.isSameType(ERROR_TYPE, parameterType)) {
             throw createError("Error",
-                    "onError method parameter must be of type 'activemq:Error'.");
+                    "onError method parameter must be of type 'classic:Error'.");
         }
     }
 

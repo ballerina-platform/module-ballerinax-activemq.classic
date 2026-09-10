@@ -16,25 +16,24 @@
 
 import ballerina/lang.runtime;
 import ballerina/test;
+import ballerina/time;
 
-// Dedicated listener for client integration tests that need a subscriber (topic tests).
 listener Listener clientTestListener = check new Listener(BROKER_URL);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 1: Basic send and receive on a queue
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientSendAndReceiveFromQueue() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("client.test.basic.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "basic-1",
         payload: "Hello ActiveMQ".toBytes()
-    });
-    Message? received = check mqClient->receiveMessage("client.test.basic.queue", 5000);
-    check mqClient->close();
+    }, {queueName: "client.test.basic.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.basic.queue"});
+    record {|*Message; byte[] payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
     test:assertTrue(received is Message, "should receive the sent message");
     if received is Message {
         string content = check string:fromBytes(received.payload);
@@ -42,57 +41,48 @@ isolated function testClientSendAndReceiveFromQueue() returns error? {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 2: receiveMessage returns () when queue is empty within timeout
-// ─────────────────────────────────────────────────────────────────────────────
-
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientReceiveReturnsNilOnTimeout() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    Message? received = check mqClient->receiveMessage("client.test.empty.queue", 1000);
-    check mqClient->close();
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.empty.queue"});
+    Message? received = check consumer->receive(1000);
+    check consumer->close();
     test:assertTrue(received is (), "should return nil when no message arrives in timeout");
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 3: Multiple messages are received in the order they were sent
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientMultipleMessages() returns error? {
-    Client mqClient = check new (BROKER_URL);
+    MessageProducer producer = check new (BROKER_URL);
     string[] payloads = ["First", "Second", "Third"];
     foreach string p in payloads {
-        check mqClient->send("client.test.multi.queue", {
+        check producer->send({
             messageId: p,
             payload: p.toBytes()
-        });
+        }, {queueName: "client.test.multi.queue"});
     }
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.multi.queue"});
     string[] received = [];
-    Message? msg = check mqClient->receiveMessage("client.test.multi.queue", 3000);
+    record {|*Message; byte[] payload;|}? msg = check consumer->receive(3000);
     while msg is Message {
         received.push(check string:fromBytes(msg.payload));
-        msg = check mqClient->receiveMessage("client.test.multi.queue", 2000);
+        msg = check consumer->receive(2000);
     }
-    check mqClient->close();
+    check consumer->close();
     test:assertEquals(received.length(), 3, "should receive all 3 sent messages");
     test:assertEquals(received, payloads, "messages should arrive in send order");
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 4: JMS headers and custom properties survive the send/receive roundtrip
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientMessageFieldsRoundtrip() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("client.test.fields.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "fields-1",
         payload: "Roundtrip payload".toBytes(),
         correlationId: "corr-abc-123",
@@ -103,9 +93,12 @@ isolated function testClientMessageFieldsRoundtrip() returns error? {
             "category": "electronics",
             "region": "APAC"
         }
-    });
-    Message? received = check mqClient->receiveMessage("client.test.fields.queue", 5000);
-    check mqClient->close();
+    }, {queueName: "client.test.fields.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.fields.queue"});
+    Message? received = check consumer->receive(5000);
+    check consumer->close();
     test:assertTrue(received is Message, "should receive message");
     if received is Message {
         test:assertEquals(received.correlationId, "corr-abc-123", "correlationId should roundtrip");
@@ -114,38 +107,62 @@ isolated function testClientMessageFieldsRoundtrip() returns error? {
         test:assertTrue(persistent is boolean && persistent == true, "persistent should be true");
         int? priority = received.priority;
         test:assertTrue(priority is int && priority >= 7, "priority should be preserved");
-        map<anydata>? props = received.properties;
-        test:assertTrue(props is map<anydata>, "custom properties should be present");
-        if props is map<anydata> {
+        map<Property>? props = received.properties;
+        test:assertTrue(props is map<Property>, "custom properties should be present");
+        if props is map<Property> {
             test:assertEquals(props["category"], "electronics");
             test:assertEquals(props["region"], "APAC");
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 5: Persistent and non-persistent delivery modes are reflected in received
-//         messages
-// ─────────────────────────────────────────────────────────────────────────────
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientPriorityZeroRoundtrips() returns error? {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
+        messageId: "priority-zero-1",
+        payload: "priority zero payload".toBytes(),
+        priority: 0
+    }, {queueName: "client.test.priorityzero.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.priorityzero.queue"});
+    Message? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "should receive message");
+    if received is Message {
+        test:assertEquals(received.priority, 0, "priority 0 should round-trip, not be dropped as absent");
+    }
+}
 
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientPersistenceField() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("client.test.persist.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "p-1",
         payload: "persistent".toBytes(),
         persistent: true
-    });
-    check mqClient->send("client.test.nonpersist.queue", {
+    }, {queueName: "client.test.persist.queue"});
+    check producer->send({
         messageId: "np-1",
         payload: "non-persistent".toBytes(),
         persistent: false
-    });
-    Message? pMsg = check mqClient->receiveMessage("client.test.persist.queue", 3000);
-    Message? npMsg = check mqClient->receiveMessage("client.test.nonpersist.queue", 3000);
-    check mqClient->close();
+    }, {queueName: "client.test.nonpersist.queue"});
+    check producer->close();
+
+    MessageConsumer persistConsumer = check new (BROKER_URL, destination = {queueName: "client.test.persist.queue"});
+    Message? pMsg = check persistConsumer->receive(3000);
+    check persistConsumer->close();
+
+    MessageConsumer nonpersistConsumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.nonpersist.queue"});
+    Message? npMsg = check nonpersistConsumer->receive(3000);
+    check nonpersistConsumer->close();
+
     test:assertTrue(pMsg is Message, "persistent message should be received");
     test:assertTrue(npMsg is Message, "non-persistent message should be received");
     if pMsg is Message {
@@ -156,35 +173,30 @@ isolated function testClientPersistenceField() returns error? {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 6: replyTo header is preserved and returned as a destination string
-// ─────────────────────────────────────────────────────────────────────────────
-
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientReplyToField() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("client.test.replyto.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "rr-1",
         payload: "Request".toBytes(),
-        replyTo: "client.test.reply.queue"
-    });
-    Message? received = check mqClient->receiveMessage("client.test.replyto.queue", 5000);
-    check mqClient->close();
+        replyTo: {queueName: "client.test.reply.queue"}
+    }, {queueName: "client.test.replyto.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.replyto.queue"});
+    Message? received = check consumer->receive(5000);
+    check consumer->close();
     test:assertTrue(received is Message, "should receive message with replyTo set");
     if received is Message {
-        string? replyTo = received.replyTo;
-        test:assertTrue(replyTo is string, "replyTo should be present");
-        // ActiveMQ serialises queue destinations as "queue://name"
-        test:assertTrue((<string>replyTo).includes("client.test.reply.queue"),
-            "replyTo should contain the original queue name");
+        Destination? replyTo = received.replyTo;
+        test:assertTrue(replyTo is Queue, "replyTo should be a queue destination");
+        if replyTo is Queue {
+            test:assertEquals(replyTo.queueName, "client.test.reply.queue");
+        }
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 7: Client can publish to a JMS topic; a Listener service receives it
-// ─────────────────────────────────────────────────────────────────────────────
 
 isolated int clientTopicReceivedCount = 0;
 
@@ -194,9 +206,7 @@ isolated int clientTopicReceivedCount = 0;
 isolated function testClientSendToTopic() returns error? {
     lock { clientTopicReceivedCount = 0; }
     Service topicSvc = @ServiceConfig {
-        topicName: "client.test.topic",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        topicName: "client.test.topic"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -205,98 +215,90 @@ isolated function testClientSendToTopic() returns error? {
         }
     };
     check clientTestListener.attach(topicSvc, "client-topic-svc");
-    // Allow the subscriber to fully register before the producer sends.
     runtime:sleep(2);
 
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("topic://client.test.topic", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "topic-msg-1",
-        payload: "Topic message from Client".toBytes()
-    });
-    check mqClient->close();
+        payload: "Topic message from producer".toBytes()
+    }, {topicName: "client.test.topic"});
+    check producer->close();
 
     runtime:sleep(2);
     lock {
         test:assertEquals(clientTopicReceivedCount, 1,
-            "listener service should receive the message published by Client to a topic");
+            "listener service should receive the message published by the producer to a topic");
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 8: Calling send after close() returns an Error
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientClose() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->close();
-    Error? result = mqClient->send("client.test.close.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->close();
+    Error? result = producer->send({
         messageId: "after-close",
         payload: "should fail".toBytes()
-    });
+    }, {queueName: "client.test.close.queue"});
     test:assertTrue(result is Error, "send after close should return an Error");
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 9: messageId, timestamp, and destination are populated by the broker
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client"]
 }
 isolated function testClientBrokerPopulatedFields() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("client.test.broker.fields.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "sent-id",
         payload: "Broker fields test".toBytes()
-    });
-    Message? received = check mqClient->receiveMessage("client.test.broker.fields.queue", 5000);
-    check mqClient->close();
+    }, {queueName: "client.test.broker.fields.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.broker.fields.queue"});
+    Message? received = check consumer->receive(5000);
+    check consumer->close();
     test:assertTrue(received is Message, "should receive message");
     if received is Message {
-        // Broker assigns its own message ID
-        test:assertTrue(received.messageId.length() > 0, "broker-assigned messageId should be present");
-        // Broker sets the timestamp at send time
+        test:assertTrue(received.messageId is string, "broker-assigned messageId should be present");
+        test:assertTrue((<string>received.messageId).length() > 0, "broker-assigned messageId should be non-empty");
         int? timestamp = received.timestamp;
         test:assertTrue(timestamp is int && timestamp > 0, "broker-assigned timestamp should be > 0");
-        // Destination should reflect where the message landed
-        string? destination = received.destination;
-        test:assertTrue(destination is string, "destination should be present");
-        test:assertTrue((<string>destination).includes("client.test.broker.fields.queue"),
-            "destination should contain the queue name");
+        Destination? destination = received.destination;
+        test:assertTrue(destination is Queue, "destination should be a queue destination");
+        if destination is Queue {
+            test:assertEquals(destination.queueName, "client.test.broker.fields.queue");
+        }
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 10: receiveMessage with a message selector — only matching messages returned
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client", "selector"]
 }
 isolated function testClientReceiveWithSelector() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    // Send two messages: one with region=APAC and one with region=EMEA.
-    check mqClient->send("client.test.selector.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "sel-apac",
         payload: "APAC order".toBytes(),
         properties: {"region": "APAC"}
-    });
-    check mqClient->send("client.test.selector.queue", {
+    }, {queueName: "client.test.selector.queue"});
+    check producer->send({
         messageId: "sel-emea",
         payload: "EMEA order".toBytes(),
         properties: {"region": "EMEA"}
-    });
+    }, {queueName: "client.test.selector.queue"});
+    check producer->close();
 
-    // Receive with selector — should get only APAC even though EMEA arrived first.
-    Message? apacMsg = check mqClient->receiveMessage(
-        "client.test.selector.queue", 5000, "region = 'APAC'");
-    // Drain the EMEA message that was skipped.
-    Message? emeaMsg = check mqClient->receiveMessage(
-        "client.test.selector.queue", 3000, "region = 'EMEA'");
-    check mqClient->close();
+    MessageConsumer apacConsumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.selector.queue"}, messageSelector = "region = 'APAC'");
+    record {|*Message; byte[] payload;|}? apacMsg = check apacConsumer->receive(5000);
+    check apacConsumer->close();
+
+    MessageConsumer emeaConsumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.selector.queue"}, messageSelector = "region = 'EMEA'");
+    Message? emeaMsg = check emeaConsumer->receive(3000);
+    check emeaConsumer->close();
 
     test:assertTrue(apacMsg is Message, "should receive the APAC message via selector");
     if apacMsg is Message {
@@ -306,212 +308,320 @@ isolated function testClientReceiveWithSelector() returns error? {
     test:assertTrue(emeaMsg is Message, "EMEA message should also be receivable with its selector");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 11: receiveMessage without selector still works (backward compat)
-// ─────────────────────────────────────────────────────────────────────────────
-
 @test:Config {
     groups: ["client", "selector"]
 }
 isolated function testClientReceiveWithoutSelector() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    check mqClient->send("client.test.no.selector.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "no-sel-1",
         payload: "no selector".toBytes()
-    });
-    Message? msg = check mqClient->receiveMessage("client.test.no.selector.queue", 5000);
-    check mqClient->close();
-    test:assertTrue(msg is Message, "receiveMessage without selector should still work");
-}
+    }, {queueName: "client.test.no.selector.queue"});
+    check producer->close();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 12: Transaction — commit delivers all messages atomically
-// ─────────────────────────────────────────────────────────────────────────────
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.no.selector.queue"});
+    Message? msg = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(msg is Message, "receive without a configured selector should still work");
+}
 
 @test:Config {
     groups: ["client", "transaction"]
 }
 isolated function testClientTransactionCommit() returns error? {
-    Client mqClient = check new (BROKER_URL);
-
-    Transaction tx = check mqClient->'transaction();
-    check tx->send("client.tx.commit.queue", {
+    MessageProducer producer = check new (BROKER_URL, transacted = true);
+    check producer->send({
         messageId: "tx-1",
         payload: "tx message 1".toBytes()
-    });
-    check tx->send("client.tx.commit.queue", {
+    }, {queueName: "client.tx.commit.queue"});
+    check producer->send({
         messageId: "tx-2",
         payload: "tx message 2".toBytes()
-    });
-    check tx->'commit();
-    check tx->close();
+    }, {queueName: "client.tx.commit.queue"});
+    check producer->'commit();
+    check producer->close();
 
-    // Both messages must now be visible.
-    Message? msg1 = check mqClient->receiveMessage("client.tx.commit.queue", 5000);
-    Message? msg2 = check mqClient->receiveMessage("client.tx.commit.queue", 5000);
-    check mqClient->close();
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.commit.queue"});
+    Message? msg1 = check consumer->receive(5000);
+    Message? msg2 = check consumer->receive(5000);
+    check consumer->close();
 
     test:assertTrue(msg1 is Message, "first committed message should be received");
     test:assertTrue(msg2 is Message, "second committed message should be received");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 13: Transaction — rollback discards all messages
-// ─────────────────────────────────────────────────────────────────────────────
-
 @test:Config {
     groups: ["client", "transaction"]
 }
 isolated function testClientTransactionRollback() returns error? {
-    Client mqClient = check new (BROKER_URL);
-
-    Transaction tx = check mqClient->'transaction();
-    check tx->send("client.tx.rollback.queue", {
+    check drainQueue("client.tx.rollback.queue");
+    MessageProducer producer = check new (BROKER_URL, transacted = true);
+    check producer->send({
         messageId: "tx-rb-1",
         payload: "will be discarded".toBytes()
-    });
-    check tx->'rollback();
-    check tx->close();
+    }, {queueName: "client.tx.rollback.queue"});
+    check producer->'rollback();
+    check producer->close();
 
-    // Queue must be empty — rollback discarded the message.
-    Message? msg = check mqClient->receiveMessage("client.tx.rollback.queue", 2000);
-    check mqClient->close();
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.rollback.queue"});
+    Message? msg = check consumer->receive(2000);
+    check consumer->close();
     test:assertTrue(msg is (), "rolled-back message must not be delivered");
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 14: Transaction — close without commit implicitly rolls back
-// ─────────────────────────────────────────────────────────────────────────────
 
 @test:Config {
     groups: ["client", "transaction"]
 }
 isolated function testClientTransactionCloseRollsBack() returns error? {
-    Client mqClient = check new (BROKER_URL);
-
-    Transaction tx = check mqClient->'transaction();
-    check tx->send("client.tx.close.queue", {
+    check drainQueue("client.tx.close.queue");
+    MessageProducer producer = check new (BROKER_URL, transacted = true);
+    check producer->send({
         messageId: "tx-close-1",
         payload: "implicit rollback".toBytes()
-    });
-    check tx->close(); // close without commit — broker must discard the message
+    }, {queueName: "client.tx.close.queue"});
+    check producer->close();
 
-    Message? msg = check mqClient->receiveMessage("client.tx.close.queue", 2000);
-    check mqClient->close();
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.close.queue"});
+    Message? msg = check consumer->receive(2000);
+    check consumer->close();
     test:assertTrue(msg is (), "closing a transaction without committing must roll back");
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 15: sendRequest — responder sends reply to JMSReplyTo; caller receives it
-// ─────────────────────────────────────────────────────────────────────────────
-
-isolated int rrResponderCount = 0;
-
 @test:Config {
-    groups: ["client", "request-reply"]
-}
-function testClientSendRequest() returns error? {
-    lock { rrResponderCount = 0; }
-
-    // Responder: receives requests and sends a reply to the replyTo destination,
-    // echoing the request's correlationId so the caller can match the reply.
-    Listener responderListener = check new (BROKER_URL);
-    Service responderSvc = @ServiceConfig {
-        queueName: "client.rr.request.queue",
-        pollingInterval: 1,
-        receiveTimeout: 2
-    } service object {
-        remote function onMessage(Message message) returns error? {
-            lock { rrResponderCount += 1; }
-            string? replyTo = message.replyTo;
-            if replyTo is string {
-                Client responder = check new (BROKER_URL);
-                check responder->send(replyTo, {
-                    messageId: "rr-reply-1",
-                    correlationId: message.correlationId,
-                    payload: "Reply: received".toBytes()
-                });
-                check responder->close();
-            }
-        }
-    };
-    check responderListener.attach(responderSvc, "rr-responder-svc");
-    check responderListener.'start();
-
-    runtime:sleep(1);
-
-    error? testError = ();
-    Message? reply = ();
-    do {
-        Client requester = check new (BROKER_URL);
-        // Use correlationId (a JMS header) to tag the request for matching with the reply.
-        reply = check requester->sendRequest("client.rr.request.queue", {
-            messageId: "rr-req-1",
-            correlationId: "rr-corr-id-001",
-            payload: "Request".toBytes()
-        }, 10000);
-        check requester->close();
-    } on fail error e {
-        testError = e;
-    }
-
-    check responderListener.gracefulStop();
-
-    if testError is error {
-        return testError;
-    }
-    test:assertTrue(reply is Message, "sendRequest should receive a reply within the timeout");
-    if reply is Message {
-        string content = check string:fromBytes(reply.payload);
-        test:assertEquals(content, "Reply: received", "reply payload should match what the responder sent");
-        test:assertEquals(reply.correlationId, "rr-corr-id-001",
-            "reply correlationId should echo the request correlationId");
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 16: sendRequest — returns () when no responder replies within timeout
-// ─────────────────────────────────────────────────────────────────────────────
-
-@test:Config {
-    groups: ["client", "request-reply"]
-}
-isolated function testClientSendRequestTimeout() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    // Nobody is listening on this queue, so the reply never arrives.
-    Message? reply = check mqClient->sendRequest("client.rr.nobody.queue", {
-        messageId: "rr-timeout-1",
-        payload: "orphan request".toBytes()
-    }, 1500);
-    check mqClient->close();
-    test:assertTrue(reply is (), "sendRequest should return () when no reply arrives within the timeout");
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Test 17: Scheduled delivery — fields are accepted without error
-// (Full delay verification requires schedulerSupport="true" in activemq.xml)
-// ─────────────────────────────────────────────────────────────────────────────
-
-@test:Config {
-    groups: ["client", "scheduler"],
-    enable: false
+    groups: ["client", "scheduler"]
 }
 function testClientScheduledDelivery() returns error? {
-    Client mqClient = check new (BROKER_URL);
-    // Schedule delivery 4 seconds in the future.
-    check mqClient->send("client.scheduled.queue", {
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
         messageId: "sched-1",
         payload: "scheduled message".toBytes(),
         scheduledDelay: 4000
-    });
+    }, {queueName: "client.scheduled.queue"});
+    check producer->close();
 
-    // Immediate receive must time out — message is not yet due.
-    Message? early = check mqClient->receiveMessage("client.scheduled.queue", 1000);
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.scheduled.queue"});
+    Message? early = check consumer->receive(1000);
     test:assertTrue(early is (), "message should not be delivered before the scheduled delay");
 
-    // Wait for the scheduler to release the message.
     runtime:sleep(6);
-    Message? msg = check mqClient->receiveMessage("client.scheduled.queue", 3000);
-    check mqClient->close();
+    Message? msg = check consumer->receive(3000);
+    check consumer->close();
     test:assertTrue(msg is Message, "message should be delivered after the scheduled delay");
+}
+
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientPropertyTypesRoundtrip() returns error? {
+    MessageProducer producer = check new (BROKER_URL);
+    byte byteProp = 200;
+    check producer->send({
+        payload: "property types".toBytes(),
+        properties: {
+            "strProp": "hello",
+            "intProp": 42,
+            "boolProp": true,
+            "floatProp": 3.5,
+            "byteProp": byteProp
+        }
+    }, {queueName: "client.test.propertytypes.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.propertytypes.queue"});
+    Message? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "should receive the message");
+    if received is Message {
+        map<Property>? props = received.properties;
+        test:assertTrue(props is map<Property>, "properties should be present");
+        if props is map<Property> {
+            test:assertEquals(props["strProp"], "hello");
+            test:assertEquals(props["intProp"], 42);
+            test:assertEquals(props["boolProp"], true);
+            test:assertEquals(props["floatProp"], 3.5);
+            Property? roundtrippedByte = props["byteProp"];
+            test:assertTrue(roundtrippedByte is byte, "byteProp should roundtrip as a byte");
+            if roundtrippedByte is byte {
+                test:assertEquals(roundtrippedByte, byteProp);
+            }
+        }
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientSendWithUnsupportedPropertyTypeDoesNotFail() returns error? {
+    check drainQueue("client.test.unsupportedprop.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({
+        payload: "unsupported property".toBytes(),
+        properties: {
+            "strProp": "hello",
+            "bytesProp": "unsupported".toBytes()
+        }
+    }, {queueName: "client.test.unsupportedprop.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.unsupportedprop.queue"});
+    Message? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "should still receive the message");
+    if received is Message {
+        map<Property>? props = received.properties;
+        test:assertTrue(props is map<Property>, "the other, supported property should still be present");
+        if props is map<Property> {
+            test:assertEquals(props["strProp"], "hello");
+            test:assertFalse(props.hasKey("bytesProp"), "the unsupported byte[] property should be dropped");
+        }
+    }
+}
+
+@test:Config {
+    groups: ["client", "concurrency"]
+}
+function testConcurrentProducerSendIsThreadSafe() returns error? {
+    string queueName = "client.test.concurrency.queue";
+    check drainQueue(queueName);
+    MessageProducer producer = check new (BROKER_URL);
+
+    future<Error?> f1 = start producer->send({messageId: "conc-1", payload: "one".toBytes()},
+            {queueName: queueName});
+    future<Error?> f2 = start producer->send({messageId: "conc-2", payload: "two".toBytes()},
+            {queueName: queueName});
+    future<Error?> f3 = start producer->send({messageId: "conc-3", payload: "three".toBytes()},
+            {queueName: queueName});
+
+    Error? r1 = wait f1;
+    Error? r2 = wait f2;
+    Error? r3 = wait f3;
+    check producer->close();
+
+    test:assertTrue(r1 is (), "concurrent send 1 should not error");
+    test:assertTrue(r2 is (), "concurrent send 2 should not error");
+    test:assertTrue(r3 is (), "concurrent send 3 should not error");
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: queueName});
+    int received = 0;
+    Message? msg = check consumer->receive(3000);
+    while msg is Message {
+        received += 1;
+        msg = check consumer->receive(1000);
+    }
+    check consumer->close();
+    test:assertEquals(received, 3,
+        "all 3 concurrently-sent messages should arrive intact, none lost or corrupted");
+}
+
+@test:Config {
+    groups: ["client", "concurrency"]
+}
+function testReceiveDoesNotDeadlockClose() returns error? {
+    string queueName = "client.test.receive.deadlock.queue";
+    check drainQueue(queueName);
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: queueName});
+
+    future<Message|Error?> f = start consumer->receive(0, Message);
+    runtime:sleep(1);
+
+    Error? closeResult = consumer->close();
+    test:assertTrue(closeResult is (), "close() must return promptly, not hang behind a blocking receive(0)");
+
+    Message|Error? received = wait f;
+    test:assertTrue(received is (), "a receive() blocked when the consumer closes should unblock with nil");
+}
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientTransactionCommitAfterCloseReturnsError() returns error? {
+    MessageProducer producer = check new (BROKER_URL, transacted = true);
+    check producer->close();
+    Error? result = producer->'commit();
+    test:assertTrue(result is Error, "commit after close should return an Error, not panic");
+}
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientTransactionDoubleCloseIdempotent() returns error? {
+    MessageProducer producer = check new (BROKER_URL, transacted = true);
+    check producer->close();
+    do { check producer->close(); } on fail { }
+}
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+function testClientTransactionRollbackAfterSendFailure() returns error? {
+    string queueName = "client.tx.sendfailure.queue";
+    check drainQueue(queueName);
+    MessageProducer producer = check new (BROKER_URL, transacted = true);
+    check producer->send({
+        messageId: "tx-fail-1",
+        payload: "will never be committed".toBytes()
+    }, {queueName});
+
+    Error? result = producer->send({payload: "will fail".toBytes(), priority: 15}, {queueName});
+    test:assertTrue(result is Error, "sending with an invalid priority should fail, not panic");
+
+    check producer->'rollback();
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName});
+    Message? msg = check consumer->receive(2000);
+    check consumer->close();
+    test:assertTrue(msg is (),
+        "rollback after a send failure must discard the whole transaction, including the earlier message");
+}
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientConsumerTransactionCommitAfterCloseReturnsError() returns error? {
+    MessageConsumer consumer = check new (BROKER_URL,
+        ackMode = SESSION_TRANSACTED, destination = {queueName: "client.tx.consumer.close.queue"});
+    check consumer->close();
+    Error? result = consumer->'commit();
+    test:assertTrue(result is Error, "commit after close should return an Error, not panic");
+}
+
+@test:Config {
+    groups: ["client", "transaction"]
+}
+isolated function testClientConsumerTransactionDoubleCloseIdempotent() returns error? {
+    MessageConsumer consumer = check new (BROKER_URL,
+        ackMode = SESSION_TRANSACTED, destination = {queueName: "client.tx.consumer.doubleclose.queue"});
+    check consumer->close();
+    do { check consumer->close(); } on fail { }
+}
+
+@test:Config {
+    groups: ["client", "concurrency"]
+}
+function testCommitWaitsForInFlightReceive() returns error? {
+    string queueName = "client.session.serialize.queue";
+    check drainQueue(queueName);
+    MessageConsumer consumer = check new (BROKER_URL,
+        ackMode = SESSION_TRANSACTED, destination = {queueName});
+
+    future<Message|Error?> f = start consumer->receive(2000, Message);
+    // Ensure receive holds the session lock before commit is invoked.
+    runtime:sleep(0.2);
+
+    time:Utc before = time:utcNow();
+    check consumer->'commit();
+    time:Utc after = time:utcNow();
+
+    Message|Error? received = wait f;
+    test:assertTrue(received is (), "empty queue receive should time out with nil");
+
+    decimal elapsedSeconds = time:utcDiffSeconds(after, before);
+    test:assertTrue(elapsedSeconds > 1d,
+        "commit() must wait for the in-flight receive() to release the session, not run concurrently with it");
+
+    check consumer->close();
 }

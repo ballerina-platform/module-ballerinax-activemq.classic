@@ -3,4 +3,5 @@ module io.ballerina.lib.activemq {
     requires io.ballerina.stdlib.crypto;
     requires jakarta.messaging;
     requires activemq.client;
+    requires java.logging;
 }

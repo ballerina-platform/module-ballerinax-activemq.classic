@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.activemq.listener;
+package io.ballerina.lib.activemq.util;
 
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;

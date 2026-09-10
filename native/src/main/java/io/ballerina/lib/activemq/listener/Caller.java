@@ -40,7 +40,6 @@ public class Caller {
     static final String NATIVE_SESSION = "native.session";
 
     private Caller() {
-        // Utility class - prevent instantiation
     }
 
     /**

@@ -21,8 +21,6 @@ package io.ballerina.lib.activemq.util;
 import io.ballerina.runtime.api.utils.StringUtils;
 import io.ballerina.runtime.api.values.BString;
 
-import java.math.BigDecimal;
-
 /**
  * Constants for ActiveMQ connector.
  */
@@ -30,7 +28,7 @@ public interface ActiveMQConstants {
 
     BString USERNAME = StringUtils.fromString("username");
     BString PASSWORD = StringUtils.fromString("password");
-    BString CLIENT_ID = StringUtils.fromString("clientId");
+    BString CLIENT_ID = StringUtils.fromString("clientID");
     BString SECURE_SOCKET = StringUtils.fromString("secureSocket");
     BString OPTIMIZE_ACKNOWLEDGEMENTS = StringUtils.fromString("optimizeAcknowledgements");
     BString SET_ALWAYS_SESSION_ASYNC = StringUtils.fromString("setAlwaysSessionAsync");
@@ -38,13 +36,14 @@ public interface ActiveMQConstants {
     BString REDELIVERY_POLICY = StringUtils.fromString("redeliveryPolicy");
     BString PROPERTIES = StringUtils.fromString("properties");
 
-    // Prefetch policy field names
-    BString QUEUE_PREFETCH = StringUtils.fromString("queuePrefetch");
-    BString TOPIC_PREFETCH = StringUtils.fromString("topicPrefetch");
-    BString DURABLE_TOPIC_PREFETCH = StringUtils.fromString("durableTopicPrefetch");
+    BString TRANSACTED = StringUtils.fromString("transacted");
+    BString ACK_MODE = StringUtils.fromString("ackMode");
+
+    BString QUEUE_PREFETCH = StringUtils.fromString("queuePrefetchSize");
+    BString TOPIC_PREFETCH = StringUtils.fromString("topicPrefetchSize");
+    BString DURABLE_TOPIC_PREFETCH = StringUtils.fromString("durableTopicPrefetchSize");
     BString OPTIMIZE_DURABLE_TOPIC_PREFETCH_SIZE = StringUtils.fromString("optimizeDurableTopicPrefetchSize");
 
-    // Redelivery policy field names
     BString COLLISION_AVOIDANCE_PERCENT = StringUtils.fromString("collisionAvoidancePercent");
     BString MAXIMUM_REDELIVERIES = StringUtils.fromString("maximumRedeliveries");
     BString MAXIMUM_REDELIVERY_DELAY = StringUtils.fromString("maximumRedeliveryDelay");
@@ -55,7 +54,6 @@ public interface ActiveMQConstants {
     BString REDELIVERY_DELAY = StringUtils.fromString("redeliveryDelay");
     BString PRE_DISPATCH_CHECK = StringUtils.fromString("preDispatchCheck");
 
-    // SecureSocket field names
     BString CERT = StringUtils.fromString("cert");
     BString KEY = StringUtils.fromString("key");
     BString CERT_FILE = StringUtils.fromString("certFile");
@@ -65,37 +63,31 @@ public interface ActiveMQConstants {
     BString CRYPTO_TRUSTSTORE_PASSWORD = StringUtils.fromString("password");
     BString KEY_STORE_PATH = StringUtils.fromString("path");
     BString KEY_STORE_PASSWORD = StringUtils.fromString("password");
+    BString STORE_FORMAT = StringUtils.fromString("format");
 
-    // Ballerina record/class names
     String BMESSAGE_NAME = "Message";
     String BCALLER_NAME = "Caller";
-    String BTRANSACTION_NAME = "Transaction";
 
-    // Service config field names
     BString MESSAGE_SELECTOR = StringUtils.fromString("messageSelector");
     BString QUEUE_NAME = StringUtils.fromString("queueName");
     BString TOPIC_NAME = StringUtils.fromString("topicName");
+    BString TEMPORARY = StringUtils.fromString("temporary");
     BString SESSION_ACK_MODE = StringUtils.fromString("sessionAckMode");
     BString NO_LOCAL = StringUtils.fromString("noLocal");
     BString CONSUMER_TYPE = StringUtils.fromString("consumerType");
     BString SUBSCRIBER_NAME = StringUtils.fromString("subscriberName");
-    BString POLLING_INTERVAL = StringUtils.fromString("pollingInterval");
-    BString RECEIVE_TIMEOUT = StringUtils.fromString("receiveTimeout");
     BString EXCLUSIVE = StringUtils.fromString("exclusive");
 
-    // Scheduled delivery field names (ActiveMQ Classic scheduler)
     BString SCHEDULED_DELAY = StringUtils.fromString("scheduledDelay");
     BString SCHEDULED_PERIOD = StringUtils.fromString("scheduledPeriod");
     BString SCHEDULED_REPEAT = StringUtils.fromString("scheduledRepeat");
     BString SCHEDULED_CRON = StringUtils.fromString("scheduledCron");
 
-    // ActiveMQ scheduler JMS property keys
     String AMQ_SCHEDULED_DELAY = "AMQ_SCHEDULED_DELAY";
     String AMQ_SCHEDULED_PERIOD = "AMQ_SCHEDULED_PERIOD";
     String AMQ_SCHEDULED_REPEAT = "AMQ_SCHEDULED_REPEAT";
     String AMQ_SCHEDULED_CRON = "AMQ_SCHEDULED_CRON";
 
-    // Message record field names
     BString MESSAGE_ID = StringUtils.fromString("messageId");
     BString TIMESTAMP_FIELD = StringUtils.fromString("timestamp");
     BString CORRELATION_ID = StringUtils.fromString("correlationId");
@@ -112,21 +104,15 @@ public interface ActiveMQConstants {
     BString MESSAGE_PROPERTIES = StringUtils.fromString("properties");
     BString MESSAGE_PAYLOAD = StringUtils.fromString("payload");
 
-    // consumer tags
     String QUERY_PARAM_EXCLUSIVE_CONSUMER = "?consumer.exclusive=true";
 
-    // Acknowledgement modes
     String AUTO_ACKNOWLEDGE_MODE = "AUTO_ACKNOWLEDGE";
     String CLIENT_ACKNOWLEDGE_MODE = "CLIENT_ACKNOWLEDGE";
     String SESSION_TRANSACTED_MODE = "SESSION_TRANSACTED";
+    String DUPS_OK_ACKNOWLEDGE_MODE = "DUPS_OK_ACKNOWLEDGE";
 
-    // Remote method names
     String ON_MESSAGE_METHOD = "onMessage";
     String ON_ERROR_METHOD = "onError";
 
-    // Error
     String ACTIVEMQ_ERROR = "Error";
-
-    // Millisecond multiplier for time conversions
-    BigDecimal MILLISECOND_MULTIPLIER = new BigDecimal(1000);
 }

@@ -1,10 +1,10 @@
 [package]
 org = "ballerinax"
-name = "activemq"
+name = "activemq.classic"
 version = "0.1.0"
 authors = ["Ballerina"]
 keywords = ["service", "client", "messaging", "network", "pubsub"]
-repository = "https://github.com/ballerina-platform/module-ballerinax-activemq"
+repository = "https://github.com/ballerina-platform/module-ballerinax-activemq.classic"
 icon = "icon.png"
 license = ["Apache-2.0"]
 distribution = "2201.12.10"
@@ -14,9 +14,16 @@ graalvmCompatible = true
 
 [[platform.java21.dependency]]
 groupId = "io.ballerina.lib"
-artifactId = "activemq-native"
+artifactId = "activemq.classic-native"
 version = "0.1.0-SNAPSHOT"
-path = "../native/build/libs/activemq-native-0.1.0-SNAPSHOT.jar"
+path = "../native/build/libs/activemq.classic-native-0.1.0-SNAPSHOT.jar"
+
+[[platform.java21.dependency]]
+groupId = "io.ballerina.lib"
+artifactId = "activemq.classic-native-tests"
+version = "0.1.0-SNAPSHOT"
+path = "../native/build/libs/activemq.classic-native-tests-0.1.0-SNAPSHOT.jar"
+scope = "testOnly"
 
 [[platform.java21.dependency]]
 groupId = "org.apache.activemq"

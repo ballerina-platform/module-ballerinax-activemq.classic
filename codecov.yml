@@ -1,0 +1,2 @@
+ignore:
+  - "native/src/test/java/io/ballerina/lib/activemq/util/TestProducer.java"

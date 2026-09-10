@@ -23,7 +23,6 @@ isolated int itAckRecoverFirstCount = 0;
 isolated int itAckRecoverSecondCount = 0;
 isolated int itAckDupsOkCount = 0;
 
-// TC-ACK-01: AUTO_ACKNOWLEDGE (default) — message is not redelivered after receive
 @test:Config {
     groups: ["integration", "ack"]
 }
@@ -35,9 +34,7 @@ function testItAckAutoAcknowledge() returns error? {
     Listener ackAutoListener = check new (brokerUrl, username = username, password = password);
     Service autoSvc = @ServiceConfig {
         queueName: "it.ack.auto.queue",
-        sessionAckMode: AUTO_ACKNOWLEDGE,
-        pollingInterval: 1,
-        receiveTimeout: 2
+        sessionAckMode: AUTO_ACKNOWLEDGE
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -48,11 +45,11 @@ function testItAckAutoAcknowledge() returns error? {
     check ackAutoListener.attach(autoSvc, "it-ack-auto-svc");
     check ackAutoListener.'start();
 
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("it.ack.auto.queue", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-ack-auto-01",
         payload: "auto-ack message".toBytes()
-    });
+    }, {queueName: "it.ack.auto.queue"});
     check prod->close();
 
     runtime:sleep(5);
@@ -64,7 +61,6 @@ function testItAckAutoAcknowledge() returns error? {
     check ackAutoListener.gracefulStop();
 }
 
-// TC-ACK-02: CLIENT_ACKNOWLEDGE — message is not redelivered after explicit ack
 @test:Config {
     groups: ["integration", "ack"]
 }
@@ -76,9 +72,7 @@ function testItAckClientAcknowledgeExplicit() returns error? {
     Listener ackClientListener = check new (brokerUrl, username = username, password = password);
     Service clientAckSvc = @ServiceConfig {
         queueName: "it.ack.client.queue",
-        sessionAckMode: CLIENT_ACKNOWLEDGE,
-        pollingInterval: 1,
-        receiveTimeout: 2
+        sessionAckMode: CLIENT_ACKNOWLEDGE
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
             lock {
@@ -90,11 +84,11 @@ function testItAckClientAcknowledgeExplicit() returns error? {
     check ackClientListener.attach(clientAckSvc, "it-ack-client-svc");
     check ackClientListener.'start();
 
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("it.ack.client.queue", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-ack-client-01",
         payload: "client-ack message".toBytes()
-    });
+    }, {queueName: "it.ack.client.queue"});
     check prod->close();
 
     runtime:sleep(5);
@@ -106,9 +100,6 @@ function testItAckClientAcknowledgeExplicit() returns error? {
     check ackClientListener.gracefulStop();
 }
 
-// TC-ACK-03: CLIENT_ACKNOWLEDGE — no ack, session recover
-// Verifies that a message unacknowledged when the listener closes is redelivered
-// to the next listener that connects to the same queue.
 @test:Config {
     groups: ["integration", "ack"]
 }
@@ -117,28 +108,22 @@ function testItAckClientAcknowledgeRecover() returns error? {
     lock { itAckRecoverFirstCount = 0; }
     lock { itAckRecoverSecondCount = 0; }
 
-    // Send test message
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("it.ack.recover.queue", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-ack-recover-01",
         payload: "recover test".toBytes()
-    });
+    }, {queueName: "it.ack.recover.queue"});
     check prod->close();
 
-    // Listener 1: receives but deliberately does NOT acknowledge
     Listener listener1 = check new (brokerUrl, username = username, password = password);
     Service noAckSvc = @ServiceConfig {
         queueName: "it.ack.recover.queue",
-        sessionAckMode: CLIENT_ACKNOWLEDGE,
-        pollingInterval: 1,
-        receiveTimeout: 2
+        sessionAckMode: CLIENT_ACKNOWLEDGE
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
             lock {
                 itAckRecoverFirstCount += 1;
             }
-            // Intentionally NOT calling caller->acknowledge() so the message
-            // remains unacknowledged and should be redelivered after session close.
         }
     };
     check listener1.attach(noAckSvc, "it-ack-no-ack-svc");
@@ -150,17 +135,13 @@ function testItAckClientAcknowledgeRecover() returns error? {
             "listener 1 should receive the message");
     }
 
-    // Close without acknowledging — broker should mark the message for redelivery.
     check listener1.immediateStop();
     runtime:sleep(3);
 
-    // Listener 2: receives the redelivered message and acknowledges it
     Listener listener2 = check new (brokerUrl, username = username, password = password);
     Service redeliverSvc = @ServiceConfig {
         queueName: "it.ack.recover.queue",
-        sessionAckMode: CLIENT_ACKNOWLEDGE,
-        pollingInterval: 1,
-        receiveTimeout: 2
+        sessionAckMode: CLIENT_ACKNOWLEDGE
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
             lock {
@@ -180,9 +161,6 @@ function testItAckClientAcknowledgeRecover() returns error? {
     check listener2.gracefulStop();
 }
 
-// TC-ACK-04: DUPS_OK_ACKNOWLEDGE — flow completes without error
-// Exact redelivery behaviour is broker-dependent in DUPS_OK mode; this test
-// verifies that the session mode is accepted and messages flow without error.
 @test:Config {
     groups: ["integration", "ack"]
 }
@@ -194,9 +172,7 @@ function testItAckDupsOkAcknowledge() returns error? {
     Listener dupsOkListener = check new (brokerUrl, username = username, password = password);
     Service dupsOkSvc = @ServiceConfig {
         queueName: "it.ack.dups.queue",
-        sessionAckMode: DUPS_OK_ACKNOWLEDGE,
-        pollingInterval: 1,
-        receiveTimeout: 2
+        sessionAckMode: DUPS_OK_ACKNOWLEDGE
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -207,11 +183,11 @@ function testItAckDupsOkAcknowledge() returns error? {
     check dupsOkListener.attach(dupsOkSvc, "it-ack-dups-svc");
     check dupsOkListener.'start();
 
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("it.ack.dups.queue", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-ack-dups-01",
         payload: "dups-ok message".toBytes()
-    });
+    }, {queueName: "it.ack.dups.queue"});
     check prod->close();
 
     runtime:sleep(5);

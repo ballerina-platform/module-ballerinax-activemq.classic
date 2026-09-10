@@ -20,6 +20,8 @@ package io.ballerina.lib.activemq.listener;
 
 import io.ballerina.runtime.api.values.BError;
 
+import java.io.PrintStream;
+
 /**
  * {@code OnErrorCallback} provides ability to handle the error results which is captured when dispatching messages to
  * the ActiveMQ service.
@@ -27,6 +29,13 @@ import io.ballerina.runtime.api.values.BError;
  * @since 0.1.0
  */
 public class OnErrorCallback {
+    private static final PrintStream ERR_OUT = System.err;
+
+    private volatile MessageReceiver receiver;
+
+    public void setReceiver(MessageReceiver receiver) {
+        this.receiver = receiver;
+    }
 
     public void notifySuccess(Object result) {
         if (result instanceof BError bError) {
@@ -36,6 +45,12 @@ public class OnErrorCallback {
 
     public void notifyFailure(BError bError) {
         bError.printStackTrace();
-        System.exit(1);
+        if (receiver != null) {
+            try {
+                receiver.stop();
+            } catch (Exception ex) {
+                ERR_OUT.println("Failed to stop message receiver after onError handler failure: " + ex.getMessage());
+            }
+        }
     }
 }

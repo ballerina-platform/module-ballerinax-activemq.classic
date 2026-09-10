@@ -67,8 +67,8 @@ allprojects {
 }
 
 task build {
-    dependsOn(":activemq-native:build")
-    dependsOn(":activemq-ballerina:build")
+    dependsOn(":activemq.classic-native:build")
+    dependsOn(":activemq.classic-ballerina:build")
 }
 
 def moduleVersion = project.version.replace("-SNAPSHOT", "")

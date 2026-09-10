@@ -16,8 +16,41 @@
 
 import ballerina/crypto;
 
-# Represents an ActiveMQ service object that can be attached to an `activemq:Listener`.
+# The ActiveMQ service type attached to a `classic:Listener` for asynchronous (push-based)
+# consumption.
+#
+# An attached service must declare a remote `onMessage` method and may optionally declare an
+# `onError` method. The accepted signatures are:
+# ```ballerina
+# remote function onMessage(record {|*classic:Message; T payload;|} message) returns classic:Error?;
+# remote function onMessage(record {|*classic:Message; T payload;|} message, classic:Caller caller) returns classic:Error?;
+# remote function onMessage(classic:Message message) returns classic:Error?;
+# remote function onError(classic:Error err) returns classic:Error?;
+# ```
+# Declaring a narrowed `payload` type (`T`) causes the message payload to be data-bound into that
+# type; declaring the base `classic:Message` type yields the raw payload as `anydata`.
+# The subscription (queue or topic) and consumer options are supplied via the
+# `@classic:ServiceConfig` annotation on the service.
 public type Service distinct service object {};
+
+# Represents a queue destination for point-to-point messaging.
+public type Queue record {|
+    # The name of the queue. Ignored when `temporary` is `true` — the broker assigns the name.
+    string queueName;
+    # Whether this is a connection-scoped temporary queue rather than a regular, named one.
+    boolean temporary = false;
+|};
+
+# Represents a topic destination for publish/subscribe messaging.
+public type Topic record {|
+    # The name of the topic. Ignored when `temporary` is `true` — the broker assigns the name.
+    string topicName;
+    # Whether this is a connection-scoped temporary topic rather than a regular, named one.
+    boolean temporary = false;
+|};
+
+# Represents a JMS destination.
+public type Destination Queue|Topic;
 
 # ActiveMQ broker connection configuration.
 #
@@ -46,6 +79,33 @@ public type ConnectionConfiguration record {
     map<string> properties = {};
 };
 
+# Configuration for an ActiveMQ message producer.
+#
+# + transacted - Enables transacted messaging. Messages are sent within a transaction context,
+#                requiring an explicit commit or rollback
+# + destination - The default destination (queue or topic) to publish to. Can be omitted and/or
+#                 overridden per call via the `destination` parameter of `MessageProducer.send()`
+public type ProducerConfiguration record {|
+    *ConnectionConfiguration;
+    boolean transacted = false;
+    Destination destination?;
+|};
+
+# Configuration for an ActiveMQ message consumer.
+#
+# + ackMode - Specifies how messages received by the session will be acknowledged
+# + destination - The queue or topic to consume messages from, fixed for this consumer's lifetime
+# + messageSelector - JMS message selector expression to filter messages. Only messages with
+#                      properties matching the selector are delivered. For example, to receive only
+#                      messages with property `priority` set to `'high'`, use: `"priority = 'high'"`.
+#                      If not set, all messages from the destination will be delivered.
+public type ConsumerConfiguration record {|
+    *ConnectionConfiguration;
+    AcknowledgementMode ackMode = AUTO_ACKNOWLEDGE;
+    Destination destination;
+    string messageSelector?;
+|};
+
 # Configurations for message prefetching behavior. Prefetching allows the broker to send messages
 # to the consumer before they are explicitly requested, improving throughput by reducing network
 # round trips.
@@ -66,11 +126,35 @@ public type PrefetchPolicy record {|
 
 # Configurations for secure communication with the ActiveMQ broker.
 #
-# + cert - Configurations associated with `crypto:TrustStore` or single certificate file that the client trusts
-# + key - Configurations associated with `crypto:KeyStore` or combination of certificate and private key of the client
+# + cert - Configurations associated with `TrustStore` or single certificate file that the client trusts
+# + key - Configurations associated with `KeyStore` or combination of certificate and private key of the client
 public type SecureSocket record {|
-    crypto:TrustStore|string cert;
-    crypto:KeyStore|CertKey key?;
+    TrustStore|string cert;
+    KeyStore|CertKey key?;
+|};
+
+# Java KeyStore format.
+public const JKS = "jks";
+# PKCS12 format.
+public const PKCS12 = "pkcs12";
+
+# Represents the supported SSL store formats.
+public type SslStoreFormat JKS|PKCS12;
+
+# Represents a trust store containing trusted CA certificates.
+#
+# + format - The format of the truststore file
+public type TrustStore record {|
+    *crypto:TrustStore;
+    SslStoreFormat format = JKS;
+|};
+
+# Represents a key store containing the client's private key and certificate.
+#
+# + format - The format of the keystore file
+public type KeyStore record {|
+    *crypto:KeyStore;
+    SslStoreFormat format = JKS;
 |};
 
 # Represents a combination of certificate, private key, and private key password if encrypted.
@@ -91,9 +175,8 @@ public type CertKey record {|
 #               since epoch)
 # + correlationId - Optional identifier used to correlate this message with another (typically used
 #                   in request-reply patterns)
-# + replyTo - Name of the queue or topic where replies should be sent (used in
-#             request-reply patterns)
-# + destination - The destination (queue or topic name) where the message was sent
+# + replyTo - Queue or topic where replies should be sent
+# + destination - Queue or topic where the message was sent
 # + persistent - Message delivery mode: true for persistent (survives broker restarts), false for
 #                non-persistent (faster but may be lost on broker failure)
 # + redelivered - Indicates whether this message is being redelivered after a previous delivery
@@ -108,8 +191,12 @@ public type CertKey record {|
 #              priority)
 # + userId - Identifier of the user who sent the message (if available from the broker)
 # + format - Format identifier of the message payload (e.g., "text", "binary", "json")
-# + properties - Application-specific custom properties attached to the message
-# + payload - The message content as a byte array
+# + properties - Application-specific custom properties attached to the message. Values are
+#                restricted to the types the JMS specification allows as message properties
+# + payload - The message content. On send, the runtime type determines the JMS message produced
+#             (`string` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
+#             On receive, defaults to the JMS-message-appropriate representation unless narrowed
+#             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
 #                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.
 # + scheduledPeriod - Period in milliseconds between successive redeliveries. Use together
@@ -120,11 +207,11 @@ public type CertKey record {|
 #                  (for example, `"0 0 12 * * ?"`). Overrides delay/period/repeat when set.
 #                  Requires the broker scheduler to be enabled.
 public type Message record {|
-    string messageId;
+    string messageId?;
     int timestamp?;
     string correlationId?;
-    string replyTo?;
-    string destination?;
+    Destination replyTo?;
+    Destination destination?;
     boolean persistent?;
     boolean redelivered?;
     string 'type?;
@@ -133,13 +220,16 @@ public type Message record {|
     int priority?;
     string userId?;
     string format?;
-    map<anydata> properties?;
-    byte[] payload;
+    map<Property> properties?;
+    anydata payload;
     int scheduledDelay?;
     int scheduledPeriod?;
     int scheduledRepeat?;
     string scheduledCron?;
 |};
+
+# Represents the allowed value types for a JMS message property, and for a typed `MapMessage` entry.
+public type Property boolean|int|byte|float|string|byte[];
 
 # Defines the supported JMS message consumer types for ActiveMQ topic subscriptions.
 public enum ConsumerType {
@@ -210,17 +300,12 @@ public type RedeliveryPolicy record {|
 #                     properties matching the selector are delivered. For example, to receive only
 #                     messages with property `priority` set to `'high'`, use: `"priority = 'high'"`.
 #                     If not set, all messages from the destination will be delivered.
-# + pollingInterval - The interval (in seconds) between polling attempts for new messages
-# + receiveTimeout - The timeout (in seconds) to wait for a message when polling. If no message
-#                    arrives within this time, the receive operation returns without a message.
 # + exclusive - When enabled, only this consumer can consume messages from the destination,
 #               preventing other consumers from receiving messages from the same destination
 # + redeliveryPolicy - Configurations for message redelivery behavior when messages fail processing
 type CommonSubscriptionConfig record {|
     AcknowledgementMode sessionAckMode = AUTO_ACKNOWLEDGE;
     string messageSelector?;
-    decimal pollingInterval = 10;
-    decimal receiveTimeout = 5;
     boolean exclusive = false;
     RedeliveryPolicy redeliveryPolicy?;
 |};
@@ -251,8 +336,8 @@ public type TopicConfig record {|
     string subscriberName?;
 |};
 
-# The service configuration type for the `activemq:Service`.
+# The service configuration type for the `classic:Service`.
 public type ServiceConfiguration QueueConfig|TopicConfig;
 
-# Annotation to configure the `activemq:Service`.
+# Annotation to configure the `classic:Service`.
 public annotation ServiceConfiguration ServiceConfig on service;

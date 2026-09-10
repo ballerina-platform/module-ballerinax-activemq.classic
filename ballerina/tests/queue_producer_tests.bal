@@ -16,43 +16,52 @@
 
 import ballerina/test;
 
-// TC-QUEUE-PROD-01: Send TextMessage to queue
+@test:Config {
+    groups: ["integration", "queue-producer"]
+}
+function testItSendTextMessageToTypedQueue() returns error? {
+    MessageProducer mqClient = check new (brokerUrl, username = username, password = password);
+    Error? result = mqClient->send({
+        messageId: "it-prod-typed-01",
+        payload: "Hello, typed queue!".toBytes()
+    }, {queueName: "it.prod.typed.queue"});
+    check mqClient->close();
+    test:assertTrue(result is (), "send should succeed for a typed queue destination");
+}
+
 @test:Config {
     groups: ["integration", "queue-producer"]
 }
 function testItSendTextMessageToQueue() returns error? {
-    Client mqClient = check new (brokerUrl, username = username, password = password);
-    Error? result = mqClient->send("it.prod.text.queue", {
+    MessageProducer mqClient = check new (brokerUrl, username = username, password = password);
+    Error? result = mqClient->send({
         messageId: "it-prod-text-01",
         payload: "Hello, ActiveMQ 6.2.4!".toBytes()
-    });
+    }, {queueName: "it.prod.text.queue"});
     check mqClient->close();
     test:assertTrue(result is (), "send should succeed for a text payload");
 }
 
-// TC-QUEUE-PROD-02: Send BytesMessage to queue
 @test:Config {
     groups: ["integration", "queue-producer"]
 }
 function testItSendBytesMessageToQueue() returns error? {
-    Client mqClient = check new (brokerUrl, username = username, password = password);
+    MessageProducer mqClient = check new (brokerUrl, username = username, password = password);
     byte[] binaryPayload = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0xAB, 0xCD];
-    Error? result = mqClient->send("it.prod.bytes.queue", {
+    Error? result = mqClient->send({
         messageId: "it-prod-bytes-01",
         payload: binaryPayload
-    });
+    }, {queueName: "it.prod.bytes.queue"});
     check mqClient->close();
     test:assertTrue(result is (), "send should succeed for a binary payload");
 }
 
-// TC-QUEUE-PROD-03: Send MapMessage to queue
-// The connector represents map-like data via the message properties field.
 @test:Config {
     groups: ["integration", "queue-producer"]
 }
 function testItSendMapMessageToQueue() returns error? {
-    Client mqClient = check new (brokerUrl, username = username, password = password);
-    Error? result = mqClient->send("it.prod.map.queue", {
+    MessageProducer mqClient = check new (brokerUrl, username = username, password = password);
+    Error? result = mqClient->send({
         messageId: "it-prod-map-01",
         payload: "{}".toBytes(),
         properties: {
@@ -60,13 +69,7 @@ function testItSendMapMessageToQueue() returns error? {
             "priority": "high",
             "count": 42
         }
-    });
+    }, {queueName: "it.prod.map.queue"});
     check mqClient->close();
     test:assertTrue(result is (), "send with a properties map should succeed");
 }
-
-// TC-QUEUE-PROD-04: Send to invalid / non-existent destination
-// N/A — ActiveMQ Classic auto-creates queues on first access by default (the broker
-// ships with destinationPolicy/@policyEntry[@wildcardIncluded=true] that enables
-// auto-creation). There is no error to assert for an unknown queue name against the
-// default broker configuration.

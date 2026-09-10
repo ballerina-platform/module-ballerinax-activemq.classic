@@ -106,15 +106,34 @@ isolated function testSvcWithInvalidOnMessageParams() returns error? {
     Service svc = @ServiceConfig {
         queueName: "test-svc-params"
     } service object {
-        // Invalid - missing Message parameter
         remote function onMessage(Caller caller) returns error? {
         }
     };
     Error? result = activemqListener.attach(svc);
     test:assertTrue(result is Error);
     if result is Error {
-        test:assertTrue(result.message().includes("Required parameter 'activemq:Message' cannot be found"),
+        test:assertTrue(result.message().includes("Required parameter 'classic:Message' cannot be found"),
                 "Expected error about missing Message parameter");
+    }
+}
+
+@test:Config {
+    groups: ["service", "validations"]
+}
+isolated function testSvcWithOnlyOnError() returns error? {
+    Service svc = @ServiceConfig {
+        queueName: "test-svc-only-onerror"
+    } service object {
+        remote function onError(Error err) returns error? {
+        }
+    };
+    Error? result = activemqListener.attach(svc);
+    test:assertTrue(result is Error);
+    if result is Error {
+        test:assertEquals(
+                result.message(),
+                "Failed to attach service to listener: ActiveMQ service must declare an 'onMessage' remote method.",
+                "Invalid error message received");
     }
 }
 
@@ -128,14 +147,53 @@ isolated function testSvcWithInvalidOnErrorParams() returns error? {
         remote function onMessage(Message message) returns error? {
         }
 
-        // Invalid - onError should have exactly one error parameter
         remote function onError(Message message) returns error? {
         }
     };
     Error? result = activemqListener.attach(svc);
     test:assertTrue(result is Error);
     if result is Error {
-        test:assertTrue(result.message().includes("onError method parameter must be of type 'activemq:Error'"),
+        test:assertTrue(result.message().includes("onError method parameter must be of type 'classic:Error'"),
                 "Expected error about invalid onError parameter");
+    }
+}
+
+@test:Config {
+    groups: ["service", "validations"]
+}
+isolated function testSvcWithRequiredFieldOptionalOnMessage() returns error? {
+    Service svc = @ServiceConfig {
+        queueName: "test-svc-required-field"
+    } service object {
+        remote function onMessage(record {|*Message; string payload; string correlationId;|} message)
+                returns error? {
+        }
+    };
+    Error? result = activemqListener.attach(svc);
+    test:assertTrue(result is Error);
+    if result is Error {
+        test:assertTrue(
+                result.message().includes("onMessage method parameters must be of type 'classic:Message'"),
+                "Expected error about an incompatible onMessage parameter type");
+    }
+}
+
+@test:Config {
+    groups: ["service", "validations"]
+}
+isolated function testSvcWithExtraRequiredFieldOnMessage() returns error? {
+    Service svc = @ServiceConfig {
+        queueName: "test-svc-extra-required-field"
+    } service object {
+        remote function onMessage(record {|*Message; string payload; string extra;|} message)
+                returns error? {
+        }
+    };
+    Error? result = activemqListener.attach(svc);
+    test:assertTrue(result is Error);
+    if result is Error {
+        test:assertTrue(
+                result.message().includes("onMessage method parameters must be of type 'classic:Message'"),
+                "Expected error about an incompatible onMessage parameter type");
     }
 }

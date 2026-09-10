@@ -16,13 +16,14 @@
   ~ under the License.
   -->
 <FindBugsFilter>
-    <!-- System.exit is intentional for fatal errors in error callback -->
+    <!-- Cleanup failures must not replace the original initialization error. -->
     <Match>
-        <Class name="io.ballerina.lib.activemq.listener.OnErrorCallback"/>
-        <Bug pattern="DM_EXIT"/>
+        <Class name="io.ballerina.lib.activemq.util.CommonUtils"/>
+        <Method name="closeQuietly"/>
+        <Bug pattern="DE_MIGHT_IGNORE"/>
     </Match>
 
-    <!-- JMS objects (Session, MessageConsumer) cannot be cloned - false positive -->
+    <!-- JMS resources cannot be cloned. -->
     <Match>
         <Class name="io.ballerina.lib.activemq.listener.MessageReceiver"/>
         <Field name="session"/>
@@ -33,25 +34,30 @@
         <Field name="consumer"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
-
-    <!-- ConnectionConfig is a record - expose internal representation is by design -->
     <Match>
-        <Class name="io.ballerina.lib.activemq.listener.ConnectionConfig"/>
+        <Class name="io.ballerina.lib.activemq.listener.MessageReceiver"/>
+        <Field name="messageDispatcher"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- ConnectionConfig intentionally exposes its record values. -->
+    <Match>
+        <Class name="io.ballerina.lib.activemq.util.ConnectionConfig"/>
         <Method name="properties"/>
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
     <Match>
-        <Class name="io.ballerina.lib.activemq.listener.ConnectionConfig"/>
+        <Class name="io.ballerina.lib.activemq.util.ConnectionConfig"/>
         <Method name="secureSocket"/>
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
     <Match>
-        <Class name="io.ballerina.lib.activemq.listener.ConnectionConfig"/>
+        <Class name="io.ballerina.lib.activemq.util.ConnectionConfig"/>
         <Method name="&lt;init&gt;"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 
-    <!-- Service needs to return internal BObject for Ballerina runtime -->
+    <!-- The Ballerina runtime requires the service's internal BObject. -->
     <Match>
         <Class name="io.ballerina.lib.activemq.listener.Service"/>
         <Method name="getConsumerService"/>

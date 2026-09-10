@@ -17,36 +17,33 @@
 import ballerina/lang.runtime;
 import ballerina/test;
 
-// SSL/TLS Secure Socket Tests
-
 isolated int sslQueueReceivedMessageCount = 0;
 isolated int sslTopicReceivedMessageCount = 0;
 isolated int sslWithCertKeyReceivedMessageCount = 0;
+isolated int sslJksKeyStoreMsgCount = 0;
+isolated int sslTrustStoreRecordMsgCount = 0;
 
 @test:Config {
     groups: ["ssl", "secure"]
 }
 isolated function testSSLQueueWithKeyStore() returns error? {
-    // Reset counter for this test
     lock {
         sslQueueReceivedMessageCount = 0;
     }
 
-    // Create listener with SSL configuration using KeyStore
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
-        queueName: "ssl-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "ssl-test-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -58,10 +55,8 @@ isolated function testSSLQueueWithKeyStore() returns error? {
     check sslListener.attach(consumerSvc, "ssl-queue-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send message using test producer with SSL URL
     check sendToQueue(BROKER_SSL_URL, "ssl-test-queue", "Hello from SSL queue");
 
     runtime:sleep(2);
@@ -77,22 +72,20 @@ isolated function testSSLQueueWithKeyStore() returns error? {
     groups: ["ssl", "secure", "topics"]
 }
 isolated function testSSLTopicWithKeyStore() returns error? {
-    // Create listener with SSL configuration using KeyStore
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
         topicName: "ssl-test-topic",
-        subscriberName: "ssl-sub-1",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        subscriberName: "ssl-sub-1"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -104,10 +97,8 @@ isolated function testSSLTopicWithKeyStore() returns error? {
     check sslListener.attach(consumerSvc, "ssl-topic-service");
     check sslListener.start();
 
-    // Give subscriber time to connect
     runtime:sleep(2);
 
-    // Send message using test producer with SSL URL
     check sendToTopic(BROKER_SSL_URL, "ssl-test-topic", "Hello from SSL topic");
 
     runtime:sleep(2);
@@ -123,12 +114,10 @@ isolated function testSSLTopicWithKeyStore() returns error? {
     groups: ["ssl", "secure"]
 }
 isolated function testSSLWithCertKeyConfiguration() returns error? {
-    // Reset counter for this test
     lock {
         sslWithCertKeyReceivedMessageCount = 0;
     }
 
-    // Create listener with SSL configuration using CertKey (PEM files)
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
             cert: SERVER_CERT_PATH,
@@ -140,9 +129,7 @@ isolated function testSSLWithCertKeyConfiguration() returns error? {
     });
 
     Service consumerSvc = @ServiceConfig {
-        queueName: "ssl-certkey-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "ssl-certkey-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -154,10 +141,8 @@ isolated function testSSLWithCertKeyConfiguration() returns error? {
     check sslListener.attach(consumerSvc, "ssl-certkey-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send message
     check sendToQueue(BROKER_SSL_URL, "ssl-certkey-queue", "Hello from SSL with CertKey");
 
     runtime:sleep(2);
@@ -175,27 +160,24 @@ isolated int sslTransactionsMsgCount = 0;
     groups: ["ssl", "secure", "transactions"]
 }
 isolated function testSSLWithTransactions() returns error? {
-    // Reset counter for this test
     lock {
         sslTransactionsMsgCount = 0;
     }
 
-    // Create listener with SSL configuration
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
         sessionAckMode: SESSION_TRANSACTED,
-        queueName: "ssl-trx-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "ssl-trx-queue"
     } service object {
         isolated remote function onMessage(Message message, Caller caller) returns error? {
             lock {
@@ -208,10 +190,8 @@ isolated function testSSLWithTransactions() returns error? {
     check sslListener.attach(consumerSvc, "ssl-trx-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send message
     check sendToQueue(BROKER_SSL_URL, "ssl-trx-queue", "SSL transaction message");
 
     runtime:sleep(2);
@@ -229,27 +209,24 @@ isolated int sslClientAckMsgCount = 0;
     groups: ["ssl", "secure"]
 }
 isolated function testSSLWithClientAcknowledge() returns error? {
-    // Reset counter for this test
     lock {
         sslClientAckMsgCount = 0;
     }
 
-    // Create listener with SSL configuration
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
         sessionAckMode: CLIENT_ACKNOWLEDGE,
-        queueName: "ssl-client-ack-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "ssl-client-ack-queue"
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
             lock {
@@ -262,10 +239,8 @@ isolated function testSSLWithClientAcknowledge() returns error? {
     check sslListener.attach(consumerSvc, "ssl-client-ack-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send message
     check sendToQueue(BROKER_SSL_URL, "ssl-client-ack-queue", "SSL client ack message");
 
     runtime:sleep(2);
@@ -283,27 +258,24 @@ isolated int sslSelectorMsgCount = 0;
     groups: ["ssl", "secure"]
 }
 isolated function testSSLWithMessageSelector() returns error? {
-    // Reset counter for this test
     lock {
         sslSelectorMsgCount = 0;
     }
 
-    // Create listener with SSL configuration
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
         queueName: "ssl-selector-queue",
-        messageSelector: "priority = 'high'",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        messageSelector: "priority = 'high'"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -315,10 +287,8 @@ isolated function testSSLWithMessageSelector() returns error? {
     check sslListener.attach(consumerSvc, "ssl-selector-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send messages with different priorities
     check sendToQueueWithProperties(BROKER_SSL_URL, "ssl-selector-queue", "Low priority",
         {priority: "low"});
     check sendToQueueWithProperties(BROKER_SSL_URL, "ssl-selector-queue", "High priority",
@@ -332,7 +302,6 @@ isolated function testSSLWithMessageSelector() returns error? {
     lock {
         count = sslSelectorMsgCount;
     }
-    // Only the message with priority='high' should be received
     test:assertEquals(count, 1, "SSL selector queue should receive only messages matching selector");
 }
 
@@ -343,13 +312,13 @@ isolated int sslDurableTopicMsgCount = 0;
 }
 isolated function testSSLWithDurableTopic() returns error? {
 
-    // Create listener with SSL configuration
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
@@ -357,9 +326,7 @@ isolated function testSSLWithDurableTopic() returns error? {
     Service consumerSvc = @ServiceConfig {
         topicName: "ssl-durable-topic",
         consumerType: DURABLE,
-        subscriberName: "ssl-durable-sub",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        subscriberName: "ssl-durable-sub"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -371,10 +338,8 @@ isolated function testSSLWithDurableTopic() returns error? {
     check sslListener.attach(consumerSvc, "ssl-durable-topic-service");
     check sslListener.start();
 
-    // Give subscriber time to connect
     runtime:sleep(2);
 
-    // Send message
     check sendToTopic(BROKER_SSL_URL, "ssl-durable-topic", "Hello SSL durable subscriber");
 
     runtime:sleep(2);
@@ -392,27 +357,24 @@ isolated int sslExclusiveMsgCount = 0;
     groups: ["ssl", "secure"]
 }
 isolated function testSSLWithExclusiveConsumer() returns error? {
-    // Reset counter for this test
     lock {
         sslExclusiveMsgCount = 0;
     }
 
-    // Create listener with SSL configuration
     Listener sslListener = check new (BROKER_SSL_URL, {
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
         queueName: "ssl-exclusive-queue",
-        exclusive: true,
-        pollingInterval: 1,
-        receiveTimeout: 1
+        exclusive: true
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -424,10 +386,8 @@ isolated function testSSLWithExclusiveConsumer() returns error? {
     check sslListener.attach(consumerSvc, "ssl-exclusive-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send message
     check sendToQueue(BROKER_SSL_URL, "ssl-exclusive-queue", "Exclusive SSL consumer message");
 
     runtime:sleep(2);
@@ -445,28 +405,25 @@ isolated int sslAuthMsgCount = 0;
     groups: ["ssl", "secure", "auth"]
 }
 isolated function testSSLWithAuthentication() returns error? {
-    // Reset counter for this test
     lock {
         sslAuthMsgCount = 0;
     }
 
-    // Create listener with SSL configuration and authentication
     Listener sslListener = check new (BROKER_SSL_URL, {
         username: BROKER_USERNAME,
         password: BROKER_PASSWORD,
         secureSocket: {
-            cert: SERVER_CERT_PATH,  // Use PEM file for server trust
+            cert: SERVER_CERT_PATH,
             key: {
                 path: CLIENT_KEYSTORE_PATH,
-                password: KEYSTORE_PASSWORD
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
             }
         }
     });
 
     Service consumerSvc = @ServiceConfig {
-        queueName: "ssl-auth-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "ssl-auth-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -478,10 +435,8 @@ isolated function testSSLWithAuthentication() returns error? {
     check sslListener.attach(consumerSvc, "ssl-auth-service");
     check sslListener.start();
 
-    // Give listener time to initialize SSL connection and start consuming
     runtime:sleep(1);
 
-    // Send message
     check sendToQueue(BROKER_SSL_URL, "ssl-auth-queue", "SSL with authentication");
 
     runtime:sleep(2);
@@ -491,4 +446,98 @@ isolated function testSSLWithAuthentication() returns error? {
         count = sslAuthMsgCount;
     }
     test:assertEquals(count, 1, "SSL auth queue did not receive the expected number of messages");
+}
+
+@test:Config {
+    groups: ["ssl", "secure"]
+}
+isolated function testSSLQueueWithJksKeyStore() returns error? {
+    lock {
+        sslJksKeyStoreMsgCount = 0;
+    }
+
+    Listener sslListener = check new (BROKER_SSL_URL, {
+        secureSocket: {
+            cert: SERVER_CERT_PATH,
+            key: {
+                path: CLIENT_KEYSTORE_JKS_PATH,
+                password: KEYSTORE_PASSWORD,
+                format: JKS
+            }
+        }
+    });
+
+    Service consumerSvc = @ServiceConfig {
+        queueName: "ssl-jks-keystore-queue"
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock {
+                sslJksKeyStoreMsgCount += 1;
+            }
+        }
+    };
+
+    check sslListener.attach(consumerSvc, "ssl-jks-keystore-service");
+    check sslListener.start();
+
+    runtime:sleep(1);
+
+    check sendToQueue(BROKER_SSL_URL, "ssl-jks-keystore-queue", "Hello from SSL queue with JKS keystore");
+
+    runtime:sleep(2);
+
+    int count = 0;
+    lock {
+        count = sslJksKeyStoreMsgCount;
+    }
+    test:assertEquals(count, 1, "SSL JKS keystore queue did not receive the expected number of messages");
+}
+
+@test:Config {
+    groups: ["ssl", "secure"]
+}
+isolated function testSSLWithTrustStoreRecordConfiguration() returns error? {
+    lock {
+        sslTrustStoreRecordMsgCount = 0;
+    }
+
+    Listener sslListener = check new (BROKER_SSL_URL, {
+        secureSocket: {
+            cert: {
+                path: CLIENT_TRUSTSTORE_PATH,
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
+            },
+            key: {
+                path: CLIENT_KEYSTORE_PATH,
+                password: KEYSTORE_PASSWORD,
+                format: PKCS12
+            }
+        }
+    });
+
+    Service consumerSvc = @ServiceConfig {
+        queueName: "ssl-truststore-record-queue"
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock {
+                sslTrustStoreRecordMsgCount += 1;
+            }
+        }
+    };
+
+    check sslListener.attach(consumerSvc, "ssl-truststore-record-service");
+    check sslListener.start();
+
+    runtime:sleep(1);
+
+    check sendToQueue(BROKER_SSL_URL, "ssl-truststore-record-queue", "Hello from SSL queue with TrustStore record");
+
+    runtime:sleep(2);
+
+    int count = 0;
+    lock {
+        count = sslTrustStoreRecordMsgCount;
+    }
+    test:assertEquals(count, 1, "SSL TrustStore-record queue did not receive the expected number of messages");
 }

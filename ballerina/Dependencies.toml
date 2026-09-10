@@ -10,7 +10,7 @@ distribution-version = "2201.12.0"
 [[package]]
 org = "ballerina"
 name = "crypto"
-version = "2.9.3"
+version = "2.12.1"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "time"}
@@ -91,22 +91,26 @@ modules = [
 [[package]]
 org = "ballerina"
 name = "time"
-version = "2.7.0"
+version = "2.8.1"
 dependencies = [
 	{org = "ballerina", name = "jballerina.java"}
+]
+modules = [
+	{org = "ballerina", packageName = "time", moduleName = "time"}
 ]
 
 [[package]]
 org = "ballerinax"
-name = "activemq"
+name = "activemq.classic"
 version = "0.1.0"
 dependencies = [
 	{org = "ballerina", name = "crypto"},
 	{org = "ballerina", name = "jballerina.java"},
 	{org = "ballerina", name = "lang.runtime"},
-	{org = "ballerina", name = "test"}
+	{org = "ballerina", name = "test"},
+	{org = "ballerina", name = "time"}
 ]
 modules = [
-	{org = "ballerinax", packageName = "activemq", moduleName = "activemq"}
+	{org = "ballerinax", packageName = "activemq.classic", moduleName = "activemq.classic"}
 ]
 

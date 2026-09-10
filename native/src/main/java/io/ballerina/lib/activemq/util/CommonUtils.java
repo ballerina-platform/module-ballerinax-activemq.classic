@@ -35,7 +35,6 @@ import static io.ballerina.lib.activemq.util.ModuleUtils.getModule;
 public class CommonUtils {
 
     private CommonUtils() {
-        // Utility class - prevent instantiation
     }
 
     /**
@@ -85,13 +84,29 @@ public class CommonUtils {
      *
      * @param ackMode  the Ballerina acknowledgement mode string
      * @return the JMS session acknowledgement mode constant
+     * @throws jakarta.jms.JMSException if {@code ackMode} is not a recognized acknowledgement mode
      */
-    public static int getAcknowledgementMode(String ackMode) {
+    public static int getAcknowledgementMode(String ackMode) throws jakarta.jms.JMSException {
         return switch (ackMode) {
             case ActiveMQConstants.SESSION_TRANSACTED_MODE -> jakarta.jms.Session.SESSION_TRANSACTED;
             case ActiveMQConstants.AUTO_ACKNOWLEDGE_MODE -> jakarta.jms.Session.AUTO_ACKNOWLEDGE;
             case ActiveMQConstants.CLIENT_ACKNOWLEDGE_MODE -> jakarta.jms.Session.CLIENT_ACKNOWLEDGE;
-            case null, default -> jakarta.jms.Session.DUPS_OK_ACKNOWLEDGE;
+            case ActiveMQConstants.DUPS_OK_ACKNOWLEDGE_MODE -> jakarta.jms.Session.DUPS_OK_ACKNOWLEDGE;
+            default -> throw new jakarta.jms.JMSException("Unrecognized acknowledgement mode: " + ackMode);
         };
+    }
+
+    /** Runs a cleanup action and swallows any exception, so cleanup failure can't mask the original error. */
+    public static void closeQuietly(ThrowingRunnable action) {
+        try {
+            action.run();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Functional interface for a cleanup action that can throw a checked exception. */
+    @FunctionalInterface
+    public interface ThrowingRunnable {
+        void run() throws Exception;
     }
 }

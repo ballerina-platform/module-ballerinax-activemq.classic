@@ -28,12 +28,10 @@ isolated string? queueServiceReceivedMessage = ();
 }
 isolated function testQueueService() returns error? {
     Service consumerSvc = @ServiceConfig {
-        queueName: "service-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "service-test-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
-            string msg = check string:fromBytes(message.payload);
+            string msg = check string:fromBytes(check message.payload.ensureType());
             lock {
                 queueServiceReceivedMessageCount += 1;
             }
@@ -44,7 +42,6 @@ isolated function testQueueService() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-queue-service");
 
-    // Send message using test producer utility
     check sendToQueue(BROKER_URL, "service-test-queue", "Hello World from queue");
 
     runtime:sleep(2);
@@ -68,9 +65,7 @@ isolated function testQueueService() returns error? {
 isolated function testTopicService() returns error? {
     Service consumerSvc = @ServiceConfig {
         topicName: "service-test-topic",
-        subscriberName: "sub-1",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        subscriberName: "sub-1"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -80,11 +75,8 @@ isolated function testTopicService() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-topic-service");
 
-    // Give the subscriber time to fully attach before sending
-    // Topics require subscribers to be connected before messages are sent
     runtime:sleep(2);
 
-    // Send message using test producer utility
     check sendToTopic(BROKER_URL, "service-test-topic", "Hello World from topic");
 
     runtime:sleep(2);
@@ -102,9 +94,7 @@ isolated int serviceWithCallerReceivedMsgCount = 0;
 isolated function testServiceWithCaller() returns error? {
     Service consumerSvc = @ServiceConfig {
         sessionAckMode: CLIENT_ACKNOWLEDGE,
-        queueName: "service-caller-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "service-caller-test-queue"
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
             lock {
@@ -115,7 +105,6 @@ isolated function testServiceWithCaller() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-caller-svc");
 
-    // Send message using test producer utility
     check sendToQueue(BROKER_URL, "service-caller-test-queue", "Hello World with caller");
 
     runtime:sleep(2);
@@ -133,9 +122,7 @@ isolated int serviceWithTransactionsMsgCount = 0;
 isolated function testServiceWithTransactions() returns error? {
     Service consumerSvc = @ServiceConfig {
         sessionAckMode: SESSION_TRANSACTED,
-        queueName: "trx-service-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "trx-service-test-queue"
     } service object {
         isolated remote function onMessage(Message message, Caller caller) returns error? {
             lock {
@@ -146,7 +133,6 @@ isolated function testServiceWithTransactions() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-transacted-svc");
 
-    // Send message using test producer utility
     check sendToQueue(BROKER_URL, "trx-service-test-queue", "Transaction test message");
 
     runtime:sleep(2);
@@ -164,9 +150,7 @@ isolated int ServiceWithTransactionsRollbackMsgCount = 0;
 isolated function testServiceWithTransactionsRollback() returns error? {
     Service consumerSvc = @ServiceConfig {
         sessionAckMode: SESSION_TRANSACTED,
-        queueName: "trx-rollback-service-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "trx-rollback-service-test-queue"
     } service object {
         isolated remote function onMessage(Message message, Caller caller) returns error? {
             int count = 0;
@@ -174,7 +158,6 @@ isolated function testServiceWithTransactionsRollback() returns error? {
                 ServiceWithTransactionsRollbackMsgCount += 1;
                 count = ServiceWithTransactionsRollbackMsgCount;
             }
-            // Rollback to test redelivery
             if count == 1 {
                 check caller->'rollback();
             } else {
@@ -184,12 +167,10 @@ isolated function testServiceWithTransactionsRollback() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-rollback-svc");
 
-    // Send message using test producer utility
     check sendToQueue(BROKER_URL, "trx-rollback-service-test-queue", "Rollback test message");
 
-    runtime:sleep(3);
+    runtime:sleep(4);
     lock {
-        // Should receive message twice (once before rollback, once after redelivery)
         test:assertEquals(ServiceWithTransactionsRollbackMsgCount, 2,
             "'trx-rollback-service-test-queue' did not receive the expected number of messages");
     }
@@ -204,9 +185,7 @@ isolated function testDurableTopicService() returns error? {
     Service consumerSvc = @ServiceConfig {
         topicName: "service-durable-topic",
         consumerType: DURABLE,
-        subscriberName: "durable-sub-1",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        subscriberName: "durable-sub-1"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -216,11 +195,8 @@ isolated function testDurableTopicService() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-durable-topic-service");
 
-    // Give the subscriber time to fully attach before sending
-    // Topics require subscribers to be connected before messages are sent
     runtime:sleep(5);
 
-    // Send message using test producer utility
     check sendToTopic(BROKER_URL, "service-durable-topic", "Hello durable subscriber");
 
     runtime:sleep(5);
@@ -238,9 +214,7 @@ isolated int exclusiveQueueServiceReceivedMsgCount = 0;
 isolated function testExclusiveQueueService() returns error? {
     Service consumerSvc = @ServiceConfig {
         queueName: "service-exclusive-queue",
-        exclusive: true,
-        pollingInterval: 1,
-        receiveTimeout: 1
+        exclusive: true
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -250,7 +224,6 @@ isolated function testExclusiveQueueService() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-exclusive-service");
 
-    // Send message using test producer utility
     check sendToQueue(BROKER_URL, "service-exclusive-queue", "Exclusive consumer message");
 
     runtime:sleep(2);
@@ -268,9 +241,7 @@ isolated int messageSelectorServiceReceivedMsgCount = 0;
 isolated function testMessageSelectorService() returns error? {
     Service consumerSvc = @ServiceConfig {
         queueName: "service-selector-queue",
-        messageSelector: "priority = 'high'",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        messageSelector: "priority = 'high'"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -280,8 +251,6 @@ isolated function testMessageSelectorService() returns error? {
     };
     check activemqListener.attach(consumerSvc, "test-selector-service");
 
-    // Send messages with different priorities
-    // Only messages with priority='high' should be received
     check sendToQueueWithProperties(BROKER_URL, "service-selector-queue", "Low priority message",
         {priority: "low"});
     check sendToQueueWithProperties(BROKER_URL, "service-selector-queue", "High priority message",
@@ -291,7 +260,6 @@ isolated function testMessageSelectorService() returns error? {
 
     runtime:sleep(2);
     lock {
-        // Only the message with priority='high' should be received
         test:assertEquals(messageSelectorServiceReceivedMsgCount, 1,
             "'service-selector-queue' should receive only messages matching selector");
     }

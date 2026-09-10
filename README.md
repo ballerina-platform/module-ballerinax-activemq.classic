@@ -1,9 +1,9 @@
-# module-ballerinax-activemq
+# module-ballerinax-activemq.classic
 
-[![Build](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/ci.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/ci.yml)
-[![Trivy](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/trivy-scan.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/trivy-scan.yml)
-[![GraalVM Check](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/build-with-bal-test-graalvm.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/build-with-bal-test-graalvm.yml)
-[![GitHub Last Commit](https://img.shields.io/github/last-commit/ballerina-platform/module-ballerinax-activemq.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/commits/main)
+[![Build](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/actions/workflows/ci.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/actions/workflows/ci.yml)
+[![Trivy](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/actions/workflows/trivy-scan.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/actions/workflows/trivy-scan.yml)
+[![GraalVM Check](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/actions/workflows/build-with-bal-test-graalvm.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/actions/workflows/build-with-bal-test-graalvm.yml)
+[![GitHub Last Commit](https://img.shields.io/github/last-commit/ballerina-platform/module-ballerinax-activemq.classic.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq.classic/commits/main)
 [![GitHub Issues](https://img.shields.io/github/issues/ballerina-platform/ballerina-library/module/activemq.svg?label=Open%20Issues)](https://github.com/ballerina-platform/ballerina-library/labels/module%2Factivemq)
 
 Ballerina connector for the Apache ActiveMQ (Classic) message broker.
@@ -50,75 +50,93 @@ In your `Ballerina.toml`:
 ```toml
 [[dependency]]
 org = "ballerinax"
-name = "activemq"
+name = "activemq.classic"
 version = "0.1.0"
 ```
 
 ### 3. Send a message to a queue
 
 ```ballerina
-import ballerinax/activemq;
+import ballerinax/activemq.classic;
 
 public function main() returns error? {
-    activemq:Client mqClient = check new ("tcp://localhost:61616",
+    classic:MessageProducer producer = check new ("tcp://localhost:61616",
         username = "admin",
         password = "admin"
     );
 
-    check mqClient->send("orders.queue", {
-        messageId: "order-001",
+    check producer->send({
         payload: "{'item':'book','qty':2}".toBytes(),
         properties: {"region": "APAC"}
-    });
+    }, {queueName: "orders.queue"});
 
-    check mqClient->close();
+    check producer->close();
 }
+```
+
+`messageId` is optional — the JMS provider assigns the real one on send, and it's populated on
+any message you receive back. Set it yourself only if you have a specific reason to; use
+`correlationId` instead for application-level correlation.
+
+A producer can also be configured with a default `destination`, letting you omit it on every
+`send()` call unless you need to override it for a specific message:
+
+```ballerina
+classic:MessageProducer producer = check new ("tcp://localhost:61616",
+    destination = {queueName: "orders.queue"}
+);
+check producer->send({payload: "{'item':'book','qty':2}".toBytes()});
 ```
 
 ### 4. Receive a message from a queue
 
+A `MessageConsumer` is bound to a single queue or topic for its whole lifetime:
+
 ```ballerina
-import ballerinax/activemq;
+import ballerinax/activemq.classic;
 import ballerina/io;
 
 public function main() returns error? {
-    activemq:Client mqClient = check new ("tcp://localhost:61616",
+    classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
         username = "admin",
-        password = "admin"
+        password = "admin",
+        destination = {queueName: "orders.queue"}
     );
 
-    activemq:Message? msg = check mqClient->receiveMessage("orders.queue", 5000);
-    if msg is activemq:Message {
-        string text = check string:fromBytes(msg.payload);
-        io:println("Received: ", text);
+    record {|*classic:Message; string payload;|}? msg = check consumer->receive(5000);
+    if msg is classic:Message {
+        io:println("Received: ", msg.payload);
     }
 
-    check mqClient->close();
+    check consumer->close();
 }
 ```
 
+The `payload` field's declared type in the target record determines how the message body is
+converted — `string`/`xml` for a `TextMessage`, `byte[]` for a `BytesMessage`, or a `map`/record
+shape for a `MapMessage`. Omit the explicit type (`classic:Message? msg = check consumer->receive(5000);`)
+to get the JMS-message-appropriate default representation instead.
+
 ### 5. Subscribe with a Listener service
 
-The `Listener` polls a queue (or topic) and delivers each message to the `onMessage`
+The `Listener` delivers each message pushed to a queue (or topic) to the `onMessage`
 remote method:
 
 ```ballerina
-import ballerinax/activemq;
+import ballerinax/activemq.classic;
 import ballerina/log;
 
-listener activemq:Listener mqListener = check new ("tcp://localhost:61616",
+listener classic:Listener mqListener = check new ("tcp://localhost:61616",
     username = "admin",
     password = "admin"
 );
 
-@activemq:ServiceConfig {
-    queueName: "orders.queue",
-    pollingInterval: 2,     // seconds between polls
-    receiveTimeout: 5       // seconds to wait for a message per poll
+@classic:ServiceConfig {
+    queueName: "orders.queue"
 }
-service activemq:Service on mqListener {
-    remote function onMessage(activemq:Message message) returns error? {
-        string text = check string:fromBytes(message.payload);
+service classic:Service on mqListener {
+    remote function onMessage(classic:Message message) returns error? {
+        string text = check string:fromBytes(check message.payload.ensureType());
         log:printInfo("Processing order: " + text);
     }
 }
@@ -126,55 +144,55 @@ service activemq:Service on mqListener {
 
 Use `topicName` instead of `queueName` to subscribe to a JMS topic.
 
-### 6. Publish to a topic
-
-Prefix the destination with `topic://` when calling `send`:
+`onMessage`'s parameter can also narrow `Message`'s `payload` field to a specific type, the same
+way `MessageConsumer.receive()` does:
 
 ```ballerina
-check mqClient->send("topic://order.events", {
-    messageId: "evt-001",
+service classic:Service on mqListener {
+    remote function onMessage(record {|*classic:Message; string payload;|} message) returns error? {
+        log:printInfo("Processing order: " + message.payload);
+    }
+}
+```
+
+The `payload` field's declared type determines the conversion — see [section 4](#4-receive-a-message-from-a-queue)
+for the full set of supported combinations. A payload that can't be converted to the requested
+type is routed to `onError` (if defined) instead of being silently dropped.
+
+### 6. Publish to a topic
+
+Use a `Topic` destination when calling `send`:
+
+```ballerina
+check producer->send({
+    correlationId: "evt-001",
     payload: "order placed".toBytes()
-});
+}, {topicName: "order.events"});
 ```
 
 ### 7. Transactional sends
 
-Group multiple sends into a single atomic operation:
+Configure the producer with `transacted: true`, then group multiple sends into a single
+atomic operation:
 
 ```ballerina
-activemq:Transaction tx = check mqClient->'transaction();
-check tx->send("orders.queue",  {messageId: "tx-1", payload: "order A".toBytes()});
-check tx->send("audit.queue",   {messageId: "tx-2", payload: "audit A".toBytes()});
-check tx->'commit();   // both messages are delivered together
-check tx->close();
+classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
+check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
+check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+check producer->'commit();   // both messages are delivered together
+check producer->close();
 ```
 
 Call `'rollback()` (or simply `close()` without committing) to discard all buffered
-messages.
+messages. `'commit()`/`'rollback()` return a `classic:Error` if the producer wasn't
+configured with `transacted: true`.
 
-### 8. Request-reply pattern
-
-`sendRequest` creates a temporary reply queue, attaches it to the message as `replyTo`,
-and blocks until the responder sends a reply:
-
-```ballerina
-activemq:Message? reply = check mqClient->sendRequest("pricing.service.queue", {
-    messageId:     "req-001",
-    correlationId: "corr-abc",
-    payload:       "{'sku':'B007'}".toBytes()
-}, 8000);
-
-if reply is activemq:Message {
-    io:println("Price: ", check string:fromBytes(reply.payload));
-}
-```
-
-### 9. SSL / TLS connection
+### 8. SSL / TLS connection
 
 Pass a `secureSocket` block to connect over `ssl://`:
 
 ```ballerina
-activemq:Client mqClient = check new ("ssl://localhost:61617",
+classic:MessageProducer producer = check new ("ssl://localhost:61617",
     secureSocket = {
         cert: "/path/to/broker.pem",                 // broker's CA certificate
         key: {
@@ -188,18 +206,39 @@ activemq:Client mqClient = check new ("ssl://localhost:61617",
 Alternatively, use `crypto:TrustStore` / `crypto:KeyStore` (`.jks` / `.p12` files)
 instead of PEM paths.
 
-### 10. Message selector
+### 9. Message selector
 
-Receive only messages whose properties match a JMS selector expression:
+Configure a consumer to receive only messages whose properties match a JMS selector
+expression:
 
 ```ballerina
 // Only receive messages where the "region" property equals "APAC"
-activemq:Message? msg = check mqClient->receiveMessage(
-    "orders.queue", 5000, "region = 'APAC'"
+classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
+    destination = {queueName: "orders.queue"},
+    messageSelector = "region = 'APAC'"
 );
+classic:Message? msg = check consumer->receive(5000);
 ```
 
 The same `messageSelector` field is available in `@ServiceConfig` for listener services.
+
+### 10. Tuning prefetch and redelivery
+
+`PrefetchPolicy` controls how many messages the broker pushes to the client ahead of demand
+(higher values trade memory for throughput); `RedeliveryPolicy` controls retry behavior for a
+message that's rolled back or left unacknowledged:
+
+```ballerina
+classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
+    destination = {queueName: "orders.queue"},
+    prefetchPolicy = {queuePrefetchSize: 100},
+    redeliveryPolicy = {maximumRedeliveries: 3, initialRedeliveryDelay: 2000}
+);
+```
+
+Here, the broker prefetches up to 100 messages for this consumer, and a message that's rolled
+back is redelivered up to 3 times, waiting 2 seconds before the first retry. Both configurations
+are also accepted by `MessageProducer` and `Listener`.
 
 ### Broker containers (for local development)
 

@@ -1,0 +1,10 @@
+[package]
+org = "examples"
+name = "send_to_queue"
+version = "0.1.0"
+distribution = "2201.12.10"
+
+[[dependency]]
+org = "ballerinax"
+name = "activemq.classic"
+version = "0.1.0"
