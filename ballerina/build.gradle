@@ -17,6 +17,13 @@
  */
 
 import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.process.ExecOperations
+
+import javax.inject.Inject
+
+abstract class BallerinaExecHelper {
+    @Inject abstract ExecOperations getExecOperations()
+}
 
 plugins {
     id 'io.ballerina.plugin'
@@ -48,7 +55,7 @@ ballerina {
     packageOrganization = packageOrg
     module = packageName
     testCoverageParam = "--code-coverage --coverage-format=xml"
-    isConnector = true
+    connector = true
     platform = "java21"
 }
 
@@ -80,8 +87,9 @@ tasks.register('updateTomlFiles') {
 }
 
 tasks.register('commitTomlFiles') {
+    def execHelper = project.objects.newInstance(BallerinaExecHelper)
     doLast {
-        project.exec {
+        execHelper.execOperations.exec {
             ignoreExitValue true
             if (Os.isFamily(Os.FAMILY_WINDOWS)) {
                 commandLine 'cmd', '/c', "git commit -m \"[Automated] Update the toml files\" Ballerina.toml Dependencies.toml"
@@ -93,12 +101,13 @@ tasks.register('commitTomlFiles') {
 }
 
 tasks.register('startActiveMQBroker') {
+    def execHelper = project.objects.newInstance(BallerinaExecHelper)
     doLast {
         if (Os.isFamily(Os.FAMILY_WINDOWS)) {
             println "ActiveMQ broker startup skipped: Docker is not available on Windows. Integration tests that require a live broker will fail."
             return
         }
-        def dockerCheck = exec {
+        def dockerCheck = execHelper.execOperations.exec {
             commandLine 'sh', '-c', 'docker info > /dev/null 2>&1'
             ignoreExitValue true
         }
@@ -107,13 +116,13 @@ tasks.register('startActiveMQBroker') {
             return
         }
         def stdOut = new ByteArrayOutputStream()
-        exec {
+        execHelper.execOperations.exec {
             commandLine 'sh', '-c', "docker ps --filter name=activemq-test-server"
             standardOutput = stdOut
         }
         if (!stdOut.toString().contains("activemq-test-server")) {
             println "Starting ActiveMQ broker and waiting for it to be healthy..."
-            exec {
+            execHelper.execOperations.exec {
                 commandLine 'sh', '-c', "docker compose -f tests/resources/docker-compose.yaml up --wait"
                 standardOutput = stdOut
             }
@@ -125,11 +134,12 @@ tasks.register('startActiveMQBroker') {
 }
 
 tasks.register('stopActiveMQBroker') {
+    def execHelper = project.objects.newInstance(BallerinaExecHelper)
     doLast {
         if (Os.isFamily(Os.FAMILY_WINDOWS)) {
             return
         }
-        def dockerCheck = exec {
+        def dockerCheck = execHelper.execOperations.exec {
             commandLine 'sh', '-c', 'docker info > /dev/null 2>&1'
             ignoreExitValue true
         }
@@ -137,13 +147,13 @@ tasks.register('stopActiveMQBroker') {
             return
         }
         def stdOut = new ByteArrayOutputStream()
-        exec {
+        execHelper.execOperations.exec {
             commandLine 'sh', '-c', "docker ps --filter name=activemq-test-server"
             standardOutput = stdOut
         }
         if (stdOut.toString().contains("activemq-test-server")) {
             println "Stopping ActiveMQ broker."
-            exec {
+            execHelper.execOperations.exec {
                 commandLine 'sh', '-c', "docker compose -f tests/resources/docker-compose.yaml down"
                 standardOutput = stdOut
             }
