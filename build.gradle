@@ -18,7 +18,7 @@
 
 plugins {
     id "com.github.spotbugs-base"
-    id "com.github.johnrengelman.shadow"
+    id "com.gradleup.shadow"
     id "de.undercouch.download"
     id "net.researchgate.release"
 }
@@ -30,6 +30,9 @@ allprojects {
     version = project.version
 
     apply plugin: 'jacoco'
+    jacoco {
+        toolVersion = jacocoVersion
+    }
     apply plugin: 'maven-publish'
 
     repositories {
@@ -66,9 +69,16 @@ allprojects {
     }
 }
 
-task build {
-    dependsOn(":activemq-native:build")
-    dependsOn(":activemq-ballerina:build")
+if (tasks.names.contains('build')) {
+    tasks.named('build') {
+        dependsOn(":activemq-native:build")
+        dependsOn(":activemq-ballerina:build")
+    }
+} else {
+    tasks.register('build') {
+        dependsOn(":activemq-native:build")
+        dependsOn(":activemq-ballerina:build")
+    }
 }
 
 def moduleVersion = project.version.replace("-SNAPSHOT", "")

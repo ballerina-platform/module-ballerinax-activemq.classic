@@ -57,4 +57,34 @@
         <Method name="getConsumerService"/>
         <Bug pattern="EI_EXPOSE_REP"/>
     </Match>
+
+    <!-- stop() intentionally declares a broad throws Exception to consolidate the JMSException
+         thrown by MessageConsumer#close()/Session#close(); it's a plain method, not a framework
+         override, so the throws clause can't be narrowed to a single checked exception type. -->
+    <Match>
+        <Class name="io.ballerina.lib.activemq.listener.MessageReceiver"/>
+        <Method name="stop"/>
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION"/>
+    </Match>
+
+    <!-- These SSL/TLS helpers intentionally declare a broad throws Exception to consolidate
+         several distinct checked exceptions from the KeyStore/TrustManagerFactory/
+         KeyManagerFactory APIs (KeyStoreException, NoSuchAlgorithmException,
+         CertificateException, IOException) plus a custom decode-failure Exception; none are
+         framework-interface overrides. -->
+    <Match>
+        <Class name="io.ballerina.lib.activemq.util.SslUtils"/>
+        <Method name="getTrustManagerFactory"/>
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION"/>
+    </Match>
+    <Match>
+        <Class name="io.ballerina.lib.activemq.util.SslUtils"/>
+        <Method name="getKeyManagerFactory"/>
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION"/>
+    </Match>
+    <Match>
+        <Class name="io.ballerina.lib.activemq.util.SslUtils"/>
+        <Method name="getKeyStore"/>
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION"/>
+    </Match>
 </FindBugsFilter>
