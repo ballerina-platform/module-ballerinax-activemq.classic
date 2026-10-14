@@ -1,7 +1,7 @@
 # module-ballerinax-activemq
 
 [![Build](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/ci.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/ci.yml)
-[![Trivy](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/trivy-scan.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/trivy-scan.yml)
+[![Security Scan](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/security-scan.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/security-scan.yml)
 [![GraalVM Check](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/build-with-bal-test-graalvm.yml/badge.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/actions/workflows/build-with-bal-test-graalvm.yml)
 [![GitHub Last Commit](https://img.shields.io/github/last-commit/ballerina-platform/module-ballerinax-activemq.svg)](https://github.com/ballerina-platform/module-ballerinax-activemq/commits/main)
 [![GitHub Issues](https://img.shields.io/github/issues/ballerina-platform/ballerina-library/module/activemq.svg?label=Open%20Issues)](https://github.com/ballerina-platform/ballerina-library/labels/module%2Factivemq)
