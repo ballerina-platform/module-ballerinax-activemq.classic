@@ -511,7 +511,8 @@ public class MessageMapper {
         } else if (value instanceof Integer i) {
             // Ballerina byte arrives boxed as Integer at this native boundary.
             message.setByte(name, i.byteValue());
-        } else if (value instanceof BArray bArray) {
+        } else if (value instanceof BArray bArray
+                && TypeUtils.getReferredType(bArray.getElementType()).getTag() == TypeTags.BYTE_TAG) {
             message.setBytes(name, bArray.getBytes());
         } else if (value != null) {
             LOGGER.warning(() -> String.format(

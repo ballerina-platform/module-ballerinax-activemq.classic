@@ -261,6 +261,22 @@ isolated function testClientSendToEmptyTopicName() returns error? {
 @test:Config {
     groups: ["client"]
 }
+isolated function testClientSendWithEmptyPropertyName() returns error? {
+    MessageProducer producer = check new (BROKER_URL);
+    Error? result = producer->send({
+        payload: "empty property name",
+        properties: {"": "invalid-property-name"}
+    }, {queueName: "client.test.empty.property.queue"});
+    check producer->close();
+    test:assertTrue(result is Error, "sending with an empty property name should return an Error, not panic");
+    if result is Error {
+        test:assertEquals(result.message(), "Failed to send message: Property name cannot be empty or null");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
 isolated function testClientBrokerPopulatedFields() returns error? {
     MessageProducer producer = check new (BROKER_URL);
     check producer->send({
@@ -491,6 +507,34 @@ isolated function testClientSendWithUnsupportedPropertyTypeDoesNotFail() returns
             test:assertEquals(props["strProp"], "hello");
             test:assertFalse(props.hasKey("bytesProp"), "the unsupported byte[] property should be dropped");
         }
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns error? {
+    check drainQueue("client.test.map.array.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    map<anydata> mapPayload = {"orderId": "ORD-1", "tags": ["a", "b"]};
+    json jsonPayload = {"orderId": "ORD-2", "items": [1, 2]};
+    Error? mapResult = producer->send({payload: mapPayload}, {queueName: "client.test.map.array.queue"});
+    Error? jsonResult = producer->send({payload: jsonPayload}, {queueName: "client.test.map.array.queue"});
+    check producer->close();
+    test:assertFalse(mapResult is Error, "a map with a string[] entry should send, not panic");
+    test:assertFalse(jsonResult is Error, "a json object with an array entry should send, not panic");
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.map.array.queue"});
+    record {|*Message; map<anydata> payload;|}? first = check consumer->receive(5000);
+    record {|*Message; map<anydata> payload;|}? second = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(first is Message && second is Message, "both messages should be delivered");
+    if first is Message && second is Message {
+        test:assertEquals(first.payload["orderId"], "ORD-1", "supported map entries should be kept");
+        test:assertFalse(first.payload.hasKey("tags"), "the string[] entry should be dropped with a warning");
+        test:assertEquals(second.payload["orderId"], "ORD-2", "supported json entries should be kept");
+        test:assertFalse(second.payload.hasKey("items"), "the json array entry should be dropped with a warning");
     }
 }
 
