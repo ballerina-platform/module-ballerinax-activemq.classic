@@ -247,6 +247,20 @@ isolated function testClientClose() returns error? {
 @test:Config {
     groups: ["client"]
 }
+isolated function testClientSendToEmptyTopicName() returns error? {
+    MessageProducer producer = check new (BROKER_URL);
+    Error? result = producer->send({payload: "empty topic name"}, {topicName: ""});
+    check producer->close();
+    test:assertTrue(result is Error, "sending to an empty topic name should return an Error, not panic");
+    if result is Error {
+        test:assertEquals(result.message(),
+            "Failed to send message: Invalid destination name: a non-empty name is required");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
 isolated function testClientBrokerPopulatedFields() returns error? {
     MessageProducer producer = check new (BROKER_URL);
     check producer->send({
