@@ -194,7 +194,7 @@ public type CertKey record {|
 # + properties - Application-specific custom properties attached to the message. Values are
 #                restricted to the types the JMS specification allows as message properties
 # + payload - The message content. On send, the runtime type determines the JMS message produced
-#             (`string` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
+#             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
 #             On receive, defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.

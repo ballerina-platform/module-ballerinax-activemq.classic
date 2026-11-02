@@ -513,6 +513,25 @@ isolated function testClientSendWithUnsupportedPropertyTypeDoesNotFail() returns
 @test:Config {
     groups: ["client"]
 }
+isolated function testClientSendXmlPayloadRoundTrips() returns error? {
+    check drainQueue("client.test.xml.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    xml payload = xml `<order><id>ORD-1</id></order>`;
+    check producer->send({payload}, {queueName: "client.test.xml.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.xml.queue"});
+    record {|*Message; xml payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "the xml message should be received");
+    if received is Message {
+        test:assertEquals(received.payload, payload, "xml should round-trip through a TextMessage");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
 isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns error? {
     check drainQueue("client.test.map.array.queue");
     MessageProducer producer = check new (BROKER_URL);

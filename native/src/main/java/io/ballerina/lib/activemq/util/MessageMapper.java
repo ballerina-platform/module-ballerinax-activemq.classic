@@ -38,6 +38,7 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
+import io.ballerina.runtime.api.values.BXml;
 import jakarta.jms.BytesMessage;
 import jakarta.jms.DeliveryMode;
 import jakarta.jms.Destination;
@@ -461,12 +462,17 @@ public class MessageMapper {
         return jmsMsg;
     }
 
-    /** Maps payload's runtime type: string/byte[]/map -> Text/Bytes/Map, other anydata -> JSON bytes. */
+    /** Maps payload's runtime type: string/xml/byte[]/map -> Text/Text/Bytes/Map, other anydata -> JSON bytes. */
     @SuppressWarnings("unchecked")
     private static Message createOutgoingMessage(Session session, Object payload) throws JMSException {
         if (payload instanceof BString bString) {
             TextMessage textMessage = session.createTextMessage();
             textMessage.setText(bString.getValue());
+            return textMessage;
+        }
+        if (payload instanceof BXml bXml) {
+            TextMessage textMessage = session.createTextMessage();
+            textMessage.setText(StringUtils.getStringValue(bXml));
             return textMessage;
         }
         if (payload instanceof BArray bArray
