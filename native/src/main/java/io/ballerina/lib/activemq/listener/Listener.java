@@ -115,7 +115,8 @@ public final class Listener {
                 bService.addNativeData(NATIVE_RECEIVER, receiver);
                 getBServices(bListener).add(bService);
             });
-        } catch (BError | JMSException e) {
+        } catch (BError | JMSException | IllegalArgumentException e) {
+            // activemq-client throws IllegalArgumentException for invalid names, e.g. an empty queue name.
             String errorMsg = Objects.isNull(e.getMessage()) ? "Unknown error" : e.getMessage();
             return createError(ACTIVEMQ_ERROR, String.format("Failed to attach service to listener: %s", errorMsg), e);
         }
