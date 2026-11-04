@@ -85,12 +85,27 @@ public class MessageDispatcher {
             }
         } catch (BError bError) {
             bError.printStackTrace();
+        } catch (JMSException | ActiveMQDatabindingException e) {
+            onError(e);
+            undoDelivery();
+            throw new ActiveMQMessageProcessingException(e);
+        }
+    }
+
+    /**
+     * Hands back a message the service never received, so it is redelivered and dead-lettered after
+     * maximumRedeliveries. ActiveMQ only does this itself for auto-ack sessions; in transacted and client-ack
+     * sessions the next commit/acknowledge would otherwise remove it.
+     */
+    private void undoDelivery() {
+        try {
+            if (session.getTransacted()) {
+                session.rollback();
+            } else if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
+                session.recover();
+            }
         } catch (JMSException e) {
-            onError(e);
-            throw new ActiveMQMessageProcessingException(e);
-        } catch (ActiveMQDatabindingException e) {
-            onError(e);
-            throw new ActiveMQMessageProcessingException(e);
+            ERR_OUT.println("Failed to roll back the message after a processing failure: " + e.getMessage());
         }
     }
 
