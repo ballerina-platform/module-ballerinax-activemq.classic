@@ -501,6 +501,7 @@ public class MessageMapper {
             return textMessage;
         }
         if (payload instanceof BArray bArray
+                && TypeUtils.getReferredType(TypeUtils.getType(bArray)).getTag() != TypeTags.TUPLE_TAG
                 && TypeUtils.getReferredType(bArray.getElementType()).getTag() == TypeTags.BYTE_TAG) {
             BytesMessage bytesMessage = session.createBytesMessage();
             bytesMessage.writeBytes(bArray.getBytes());
@@ -543,6 +544,7 @@ public class MessageMapper {
             // Ballerina byte arrives boxed as Integer at this native boundary.
             message.setByte(name, i.byteValue());
         } else if (value instanceof BArray bArray
+                && TypeUtils.getReferredType(TypeUtils.getType(bArray)).getTag() != TypeTags.TUPLE_TAG
                 && TypeUtils.getReferredType(bArray.getElementType()).getTag() == TypeTags.BYTE_TAG) {
             message.setBytes(name, bArray.getBytes());
         } else if (value != null) {

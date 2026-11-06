@@ -592,7 +592,7 @@ isolated function testClientSendXmlSequenceToElementFails() returns error? {
 isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns error? {
     check drainQueue("client.test.map.array.queue");
     MessageProducer producer = check new (BROKER_URL);
-    map<anydata> mapPayload = {"orderId": "ORD-1", "tags": ["a", "b"]};
+    map<anydata> mapPayload = {"orderId": "ORD-1", "tags": ["a", "b"], "tuple": [1, "two"]};
     json jsonPayload = {"orderId": "ORD-2", "items": [1, 2]};
     Error? mapResult = producer->send({payload: mapPayload}, {queueName: "client.test.map.array.queue"});
     Error? jsonResult = producer->send({payload: jsonPayload}, {queueName: "client.test.map.array.queue"});
@@ -609,6 +609,7 @@ isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns e
     if first is Message && second is Message {
         test:assertEquals(first.payload["orderId"], "ORD-1", "supported map entries should be kept");
         test:assertFalse(first.payload.hasKey("tags"), "the string[] entry should be dropped with a warning");
+        test:assertFalse(first.payload.hasKey("tuple"), "the tuple entry should be dropped with a warning");
         test:assertEquals(second.payload["orderId"], "ORD-2", "supported json entries should be kept");
         test:assertFalse(second.payload.hasKey("items"), "the json array entry should be dropped with a warning");
     }
