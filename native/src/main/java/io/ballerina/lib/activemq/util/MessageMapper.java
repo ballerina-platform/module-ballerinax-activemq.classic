@@ -255,11 +255,21 @@ public class MessageMapper {
             return StringUtils.fromString(text);
         }
         if (typeTag == TypeTags.XML_TAG) {
-            return XmlUtils.parse(text);
+            return parseXmlPayload(text);
         }
         throw new ActiveMQDatabindingException(
                 String.format("Data binding failed: Cannot bind TextMessage to type '%s'. "
                         + "Expected 'string' or 'xml'", payloadType));
+    }
+
+    private static BXml parseXmlPayload(String text) {
+        try {
+            return XmlUtils.parse(text);
+        } catch (BError ignored) {
+            BXml wrappedXml = XmlUtils.parse("<ballerina-xml-sequence>" + text
+                    + "</ballerina-xml-sequence>");
+            return wrappedXml.children();
+        }
     }
 
     private static Object getPayloadFromMapMessage(MapMessage message, Type payloadType, int typeTag)

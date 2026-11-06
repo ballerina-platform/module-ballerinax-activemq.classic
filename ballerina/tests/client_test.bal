@@ -532,6 +532,26 @@ isolated function testClientSendXmlPayloadRoundTrips() returns error? {
 @test:Config {
     groups: ["client"]
 }
+isolated function testClientSendXmlSequenceRoundTrips() returns error? {
+    check drainQueue("client.test.xml.seq.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    xml payload = xml `<a/><b/>`;
+    check producer->send({payload}, {queueName: "client.test.xml.seq.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.xml.seq.queue"});
+    record {|*Message; xml payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "the xml sequence message should be received");
+    if received is Message {
+        test:assertEquals(received.payload, payload, "xml sequence should round-trip through a TextMessage");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
 isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns error? {
     check drainQueue("client.test.map.array.queue");
     MessageProducer producer = check new (BROKER_URL);
