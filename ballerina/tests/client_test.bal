@@ -552,6 +552,43 @@ isolated function testClientSendXmlSequenceRoundTrips() returns error? {
 @test:Config {
     groups: ["client"]
 }
+isolated function testClientSendXmlElementPayloadRoundTrips() returns error? {
+    check drainQueue("client.test.xml.element.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    xml:Element payload = xml `<order><id>ORD-2</id></order>`;
+    check producer->send({payload}, {queueName: "client.test.xml.element.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.xml.element.queue"});
+    record {|*Message; xml:Element payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "the XML element message should be received");
+    if received is Message {
+        test:assertEquals(received.payload, payload, "XML element should round-trip through a TextMessage");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientSendXmlSequenceToElementFails() returns error? {
+    check drainQueue("client.test.xml.seq.element.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    xml payload = xml `<a/><b/>`;
+    check producer->send({payload}, {queueName: "client.test.xml.seq.element.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.xml.seq.element.queue"});
+    record {|*Message; xml:Element payload;|}|error? received = consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is error, "an XML sequence should not bind to xml:Element");
+}
+
+@test:Config {
+    groups: ["client"]
+}
 isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns error? {
     check drainQueue("client.test.map.array.queue");
     MessageProducer producer = check new (BROKER_URL);

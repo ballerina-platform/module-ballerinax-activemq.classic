@@ -254,8 +254,23 @@ public class MessageMapper {
         if (typeTag == TypeTags.STRING_TAG) {
             return StringUtils.fromString(text);
         }
-        if (typeTag == TypeTags.XML_TAG) {
-            return parseXmlPayload(text);
+        if (TypeTags.isXMLTypeTag(typeTag)) {
+            BXml xmlPayload = parseXmlPayload(text);
+            if (typeTag == TypeTags.XML_TAG) {
+                return xmlPayload;
+            }
+            if (!xmlPayload.isSingleton()) {
+                throw new ActiveMQDatabindingException(
+                        String.format("Data binding failed: Cannot bind XML sequence to singleton type '%s'",
+                                payloadType));
+            }
+            try {
+                return ValueUtils.convert(xmlPayload, payloadType);
+            } catch (BError bError) {
+                throw new ActiveMQDatabindingException(
+                        String.format("Data binding failed: Cannot bind XML payload to type '%s': %s",
+                                payloadType, bError.getDetails()));
+            }
         }
         throw new ActiveMQDatabindingException(
                 String.format("Data binding failed: Cannot bind TextMessage to type '%s'. "
@@ -319,7 +334,7 @@ public class MessageMapper {
 
     private static Object getPayloadFromBytesMessage(BytesMessage message, Type payloadType, int typeTag)
             throws JMSException {
-        if (typeTag == TypeTags.STRING_TAG || typeTag == TypeTags.XML_TAG) {
+        if (typeTag == TypeTags.STRING_TAG || TypeTags.isXMLTypeTag(typeTag)) {
             throw new ActiveMQDatabindingException(
                     String.format("Data binding failed: Cannot bind BytesMessage to type '%s'. "
                             + "Use TextMessage for string/xml payloads", payloadType));
