@@ -204,6 +204,19 @@ isolated int itAckClientBindFailErrorCount = 0;
 isolated int itAckTxBindFailGoodCount = 0;
 isolated int itAckTxBindFailErrorCount = 0;
 
+isolated function waitForCounts(isolated function () returns [int, int] readCounts,
+        int expectedGood, int expectedError, decimal timeoutSeconds = 15) {
+    decimal waited = 0;
+    while waited < timeoutSeconds {
+        [int, int] [good, errs] = readCounts();
+        if good >= expectedGood && errs >= expectedError {
+            return;
+        }
+        runtime:sleep(0.25d);
+        waited += 0.25d;
+    }
+}
+
 // A message that fails data binding never reaches onMessage, so the service has no Caller to roll it
 // back with. The connector hands it back instead, so it is redelivered and dead-lettered like in
 // AUTO_ACKNOWLEDGE rather than being removed by the next message's acknowledge or commit.
@@ -241,7 +254,13 @@ function testItAckClientAcknowledgeBindingFailureIsDeadLettered() returns error?
     check prod->send({payload: "binding succeeds"}, {queueName});
     check prod->close();
 
-    runtime:sleep(6);
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckClientBindFailGoodCount; }
+        lock { errs = itAckClientBindFailErrorCount; }
+        return [good, errs];
+    }, 1, 3);
     check bindFailListener.gracefulStop();
 
     lock {
@@ -289,7 +308,13 @@ function testItAckSessionTransactedBindingFailureIsDeadLettered() returns error?
     check prod->send({payload: "binding succeeds"}, {queueName});
     check prod->close();
 
-    runtime:sleep(6);
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckTxBindFailGoodCount; }
+        lock { errs = itAckTxBindFailErrorCount; }
+        return [good, errs];
+    }, 1, 3);
     check bindFailListener.gracefulStop();
 
     lock {
