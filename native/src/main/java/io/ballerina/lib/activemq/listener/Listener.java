@@ -21,7 +21,6 @@ package io.ballerina.lib.activemq.listener;
 import io.ballerina.lib.activemq.util.ConnectionConfig;
 import io.ballerina.lib.activemq.util.ConnectionFactoryUtils;
 import io.ballerina.runtime.api.Environment;
-import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
@@ -37,6 +36,7 @@ import org.apache.activemq.ActiveMQMessageConsumer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.QUERY_PARAM_EXCLUSIVE_CONSUMER;
@@ -98,10 +98,16 @@ public final class Listener {
         Object started = bListener.getNativeData(LISTENER_STARTED);
         Session session = null;
         MessageConsumer consumer = null;
+        AtomicBoolean cleanupPerformed = new AtomicBoolean();
         try {
             Service.validateService(bService);
             Service nativeService = new Service(bService);
             ServiceConfig svcConfig = nativeService.getServiceConfig();
+
+            if ((svcConfig instanceof QueueConfig queueConfig && queueConfig.queueName().isEmpty())
+                    || (svcConfig instanceof TopicConfig topicConfig && topicConfig.topicName().isEmpty())) {
+                throw new IllegalArgumentException("Invalid destination name: a non-empty name is required");
+            }
 
             int sessionAckMode = getAcknowledgementMode(svcConfig.ackMode());
             session = connection.createSession(sessionAckMode);
@@ -114,9 +120,11 @@ public final class Listener {
                 bService.addNativeData(NATIVE_SERVICE, nativeService);
                 bService.addNativeData(NATIVE_RECEIVER, receiver);
                 getBServices(bListener).add(bService);
-            });
-        } catch (BError | JMSException | IllegalArgumentException e) {
-            // activemq-client throws IllegalArgumentException for invalid names, e.g. an empty queue name.
+            }, () -> cleanupPerformed.set(true));
+        } catch (JMSException | RuntimeException e) {
+            if (!cleanupPerformed.get()) {
+                closeAttachResources(consumer, session, e);
+            }
             String errorMsg = Objects.isNull(e.getMessage()) ? "Unknown error" : e.getMessage();
             return createError(ACTIVEMQ_ERROR, String.format("Failed to attach service to listener: %s", errorMsg), e);
         }
@@ -125,6 +133,13 @@ public final class Listener {
 
     static void completeAttachment(boolean started, MessageReceiver receiver, MessageConsumer consumer, Session session,
                                    Runnable publish) throws JMSException {
+        completeAttachment(started, receiver, consumer, session, publish, () -> {
+        });
+    }
+
+    private static void completeAttachment(boolean started, MessageReceiver receiver, MessageConsumer consumer,
+                                           Session session, Runnable publish, Runnable cleanupMarker)
+            throws JMSException {
         try {
             if (started) {
                 receiver.consume();
@@ -132,6 +147,7 @@ public final class Listener {
             publish.run();
         } catch (JMSException | RuntimeException e) {
             closeAttachResources(consumer, session, e);
+            cleanupMarker.run();
             throw e;
         }
     }

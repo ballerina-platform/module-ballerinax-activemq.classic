@@ -86,8 +86,8 @@ public class MessageDispatcher {
         } catch (BError bError) {
             bError.printStackTrace();
         } catch (JMSException | ActiveMQDatabindingException e) {
-            onError(e);
             undoDelivery();
+            onError(e);
             throw new ActiveMQMessageProcessingException(e);
         }
     }
