@@ -30,3 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the wrong native key names.
 - Fixed `clientID` silently being a no-op: a case-mismatch in the native lookup key meant an
   explicitly configured `clientID` was always discarded in favor of a random UUID.
+- Fixed `ConnectionConfiguration.properties` overriding the dedicated connection fields, contrary to the
+  documentation. A dedicated field (e.g. `clientID`) now takes precedence over the same entry in
+  `properties`. Since `optimizeAcknowledgements` and `setAlwaysSessionAsync` have default values, the
+  `optimizeAcknowledge` and `alwaysSessionAsync` entries in `properties` are now always ignored.

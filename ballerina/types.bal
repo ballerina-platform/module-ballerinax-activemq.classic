@@ -60,13 +60,20 @@ public type Destination Queue|Topic;
 #              a random UUID will be generated
 # + secureSocket - SSL/TLS encryption configurations for secure broker communication
 # + optimizeAcknowledgements - When enabled, optimizes acknowledgement processing for better
-#                              performance at the cost of potential duplicate messages
-# + setAlwaysSessionAsync - When enabled, all sessions will use asynchronous message delivery
+#                              performance at the cost of potential duplicate messages. Because this
+#                              field has a default value, it always overrides an `optimizeAcknowledge`
+#                              entry in `properties`
+# + setAlwaysSessionAsync - When enabled, all sessions will use asynchronous message delivery. Because
+#                           this field has a default value, it always overrides an `alwaysSessionAsync`
+#                           entry in `properties`
 # + redeliveryPolicy - Configurations that control how failed messages are redelivered
 # + prefetchPolicy - Configurations that control how many messages are prefetched from the broker
-# + properties - Additional broker-specific connection properties as key-value pairs. Note: If the
-#                same property is configured in both this map and dedicated fields, the dedicated
-#                field value takes precedence
+# + properties - Additional broker-specific connection properties as key-value pairs. If the same
+#                property is configured in both this map and a dedicated field, the dedicated field
+#                value takes precedence; if the dedicated field is not set, the value from this map is
+#                used. Note: `optimizeAcknowledgements` and `setAlwaysSessionAsync` have default values
+#                and are therefore always set, so the `optimizeAcknowledge` and `alwaysSessionAsync`
+#                entries in this map are ignored. Use the dedicated fields to configure them
 public type ConnectionConfiguration record {
     string username?;
     string password?;

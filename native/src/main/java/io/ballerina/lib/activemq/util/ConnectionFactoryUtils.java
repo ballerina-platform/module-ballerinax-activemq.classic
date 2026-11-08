@@ -28,6 +28,7 @@ import org.apache.activemq.RedeliveryPolicy;
 import java.security.SecureRandom;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.UUID;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.TrustManager;
@@ -65,6 +66,9 @@ public final class ConnectionFactoryUtils {
             factory = new ActiveMQConnectionFactory(url);
         }
 
+        // Applied first so that the dedicated fields set below take precedence over the properties map.
+        factory.setProperties(buildConnectionProperties(config.properties()));
+
         String username = config.username();
         String password = config.password();
         if ((username != null && password == null) || (username == null && password != null)) {
@@ -76,7 +80,11 @@ public final class ConnectionFactoryUtils {
             factory.setPassword(password);
         }
 
-        factory.setClientID(config.clientId());
+        if (config.clientId() != null) {
+            factory.setClientID(config.clientId());
+        } else if (factory.getClientID() == null) {
+            factory.setClientID(UUID.randomUUID().toString());
+        }
         factory.setOptimizeAcknowledge(config.optimizeAcknowledgements());
         factory.setAlwaysSessionAsync(config.setAlwaysSessionAsync());
 
@@ -86,7 +94,6 @@ public final class ConnectionFactoryUtils {
         if (config.redeliveryPolicyConfig() != null) {
             factory.setRedeliveryPolicy(buildRedeliveryPolicy(config.redeliveryPolicyConfig()));
         }
-        factory.setProperties(buildConnectionProperties(config.properties()));
         return factory;
     }
 
