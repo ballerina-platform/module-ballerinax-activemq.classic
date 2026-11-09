@@ -167,38 +167,44 @@ public type CertKey record {|
     string keyPassword?;
 |};
 
-# Represents a message received from an ActiveMQ broker.
+# Represents a message sent to or received from an ActiveMQ broker.
 #
-# + messageId - Unique identifier assigned to the message by the JMS provider
+# + messageId - Unique identifier assigned to the message by the JMS provider. Ignored on send
 # + timestamp - The time when the message was handed to the provider to be sent (in milliseconds
-#               since epoch)
+#               since epoch). Ignored on send
 # + correlationId - Optional identifier used to correlate this message with another (typically used
 #                   in request-reply patterns)
 # + replyTo - Queue or topic where replies should be sent
-# + destination - Queue or topic where the message was sent
+# + destination - Queue or topic where the message was sent. Ignored on send; pass the destination
+#                 to `MessageProducer.send` or configure a default on the producer
 # + persistent - Message delivery mode: true for persistent (survives broker restarts), false for
 #                non-persistent (faster but may be lost on broker failure)
 # + redelivered - Indicates whether this message is being redelivered after a previous delivery
-#                 attempt failed
+#                 attempt failed. Ignored on send
 # + 'type - Message type identifier string (provider-specific or application-defined) used for
 #           message classification and filtering
 # + expiry - Timestamp (in milliseconds since epoch) when the message expires, or 0 if it doesn't
 #            expire
 # + deliveryTime - The earliest time when the message can be delivered to a consumer (in
-#                  milliseconds since epoch), or 0 if no delivery delay
+#                  milliseconds since epoch), or 0 if no delivery delay. Ignored on send; use
+#                  `scheduledDelay` to delay delivery
 # + priority - Message priority level (0-9, where 0-4 is normal priority and 5-9 is expedited
 #              priority)
-# + userId - Identifier of the user who sent the message (if available from the broker)
-# + format - Format identifier of the message payload (e.g., "text", "binary", "json")
-# + properties - Application-specific custom properties attached to the message. Values are
-#                restricted to the types the JMS specification allows as message properties
+# + userId - Identifier of the user who sent the message (if available from the broker). Ignored
+#            on send
+# + format - Format identifier of the message payload: "text" for a `TextMessage`, "binary" for a
+#            `BytesMessage`, or "unknown" otherwise. Ignored on send
+# + properties - Application-specific custom properties attached to the message. On send, a
+#                `byte[]` value is dropped with a logged warning, because JMS message properties
+#                don't support byte arrays
 # + payload - The message content. On send, the runtime type determines the JMS message produced
-#             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
-#             In a map or record, only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
-#             values are kept; `()` values are dropped silently and others with a warning, so the
-#             payload may be incomplete.
-#             On receive, defaults to the JMS-message-appropriate representation unless narrowed
-#             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
+#             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`,
+#             other `anydata` → `BytesMessage` containing JSON). In a map or record, only `string`,
+#             `int`, `float`, `boolean`, `byte` and `byte[]` values are kept; `()` values are dropped
+#             silently and others with a warning, so the payload may be incomplete. On receive, it's
+#             `byte[]` for a `TextMessage` or `BytesMessage` and `map<classic:Property>` for a
+#             `MapMessage`, unless narrowed via `MessageConsumer.receive`'s `typedesc<Message> T`
+#             parameter or the `onMessage` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
 #                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.
 # + scheduledPeriod - Period in milliseconds between successive redeliveries. Use together
@@ -231,12 +237,16 @@ public type Message record {|
 |};
 
 # Represents the allowed value types for a JMS message property, and for a typed `MapMessage` entry.
+# A `byte[]` value is supported only as a `MapMessage` entry. As a message property, it is dropped
+# with a logged warning on send.
 public type Property boolean|int|byte|float|string|byte[];
 
 # Defines the supported JMS message consumer types for ActiveMQ topic subscriptions.
 public enum ConsumerType {
     # Durable subscriber - Subscription persists even when the client disconnects. Messages
-    # published while the subscriber is offline will be delivered when it reconnects.
+    # published while the subscriber is offline will be delivered when it reconnects with the
+    # same `clientID` and `subscriberName`. Set a stable `clientID` on the listener, because the
+    # generated default changes on every start and the subscription would not be resumed.
     DURABLE,
     # Default (non-durable) consumer - Subscription exists only while the client is connected.
     # Messages published while the consumer is disconnected are not delivered.
@@ -264,8 +274,8 @@ public enum AcknowledgementMode {
 }
 
 # Configurations for message redelivery behavior. RedeliveryPolicy defines how messages are
-# redelivered when they are rolled back. This can be set at the connection level or per consumer.
-# The consumer level redelivery policy overrides the connection level redelivery policy.
+# redelivered when they are rolled back. This can be set at the connection level or per service.
+# The service level redelivery policy overrides the connection level redelivery policy.
 #
 # + collisionAvoidancePercent - Percentage of randomness (0-100) to apply to redelivery delays to
 #                               avoid collision when multiple consumers retry simultaneously
@@ -323,13 +333,15 @@ public type QueueConfig record {|
 # Configuration for an ActiveMQ topic subscription.
 #
 # + topicName - The name of the topic to subscribe to
-# + noLocal - When enabled, messages published to the topic using this session's connection, or any
-#             other connection with the same client identifier, will not be delivered to this
-#             subscriber (useful to avoid receiving your own messages)
+# + noLocal - When enabled, messages published to the topic on this listener's own connection are
+#             not delivered to this subscriber. Each connector client opens its own connection,
+#             so messages sent through a `classic:MessageProducer` are still delivered, even with
+#             the same client identifier
 # + consumerType - The message consumer type (DURABLE or DEFAULT). Use DURABLE for subscriptions
 #                  that should persist when the client disconnects.
 # + subscriberName - The name used to identify a durable subscription (required for DURABLE
-#                    consumer type)
+#                    consumer type). Set a stable `clientID` on the listener as well, because
+#                    the subscription is identified by both values
 public type TopicConfig record {|
     *CommonSubscriptionConfig;
     string topicName;
