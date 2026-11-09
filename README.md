@@ -118,6 +118,9 @@ shape for a `MapMessage`. Omit the explicit type (`classic:Message? msg = check 
 to get the default representation instead: `byte[]` for a `TextMessage` or `BytesMessage`, and
 `map<classic:Property>` for a `MapMessage`.
 
+To exchange JSON, send `value.toJsonString()` and receive it as a `string`. A `json` object sent
+directly becomes a `MapMessage`, which drops nested values and can't be received as `json`.
+
 ### 5. Subscribe with a Listener service
 
 The `Listener` delivers each message pushed to a queue (or topic) to the `onMessage`

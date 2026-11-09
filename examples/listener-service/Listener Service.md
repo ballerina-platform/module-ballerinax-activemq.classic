@@ -7,9 +7,10 @@ processing each message as it's pushed to the service instead of pulling for it.
 
 Start a local ActiveMQ broker (see [examples/README.md](../README.md)), then run this example
 first (it keeps running, waiting for messages) and, in a second terminal, run
-[Send To Queue](../send-to-queue/Send%20To%20Queue.md):
+[Send To Queue](../send-to-queue/Send%20To%20Queue.md). Copy the sample configuration first:
 
 ```bash
+cp Config.toml.example Config.toml
 bal run
 ```
 
@@ -24,9 +25,9 @@ Expected output (once [Send To Queue](../send-to-queue/Send%20To%20Queue.md) run
 terminal):
 
 ```text
-time=... level=INFO ... msg="Processing order" payload="{\"orderId\":\"ORD-1001\",...}"
-time=... level=INFO ... msg="Processing order" payload="{\"orderId\":\"ORD-1002\",...}"
-time=... level=INFO ... msg="Processing order" payload="{\"orderId\":\"ORD-1003\",...}"
+time=... level=INFO ... message="Processing order" payload="{\"orderId\":\"ORD-1001\",...}"
+time=... level=INFO ... message="Processing order" payload="{\"orderId\":\"ORD-1002\",...}"
+time=... level=INFO ... message="Processing order" payload="{\"orderId\":\"ORD-1003\",...}"
 ```
 
 Stop the example with `Ctrl+C` once done — it runs until interrupted, since a listener service

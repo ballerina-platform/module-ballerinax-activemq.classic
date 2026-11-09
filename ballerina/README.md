@@ -38,6 +38,11 @@ credentials `admin`/`admin` - the same defaults used throughout this guide. The 
 available at [http://localhost:8161](http://localhost:8161). Unlike some other JMS brokers, ActiveMQ
 creates queues and topics on first use, so no separate provisioning step is needed.
 
+Scheduled message delivery requires the broker scheduler, which this broker doesn't enable. Without
+it, the `scheduledDelay`, `scheduledPeriod`, `scheduledRepeat` and `scheduledCron` fields have no
+effect and messages are delivered immediately. To use them, set `schedulerSupport="true"` on the
+`<broker>` element in the broker's `activemq.xml`.
+
 ## Quickstart
 
 ### Step 1: Import the module
@@ -56,6 +61,7 @@ import ballerinax/activemq.classic;
 configurable string brokerUrl = "tcp://localhost:61616";
 configurable string username = "admin";
 configurable string password = "admin";
+configurable string queueName = "orders.queue";
 
 classic:MessageProducer producer = check new (brokerUrl, username = username, password = password);
 ```
@@ -124,6 +130,9 @@ The `payload` field's declared type in the target record determines how the mess
 converted. A `Listener` service's `onMessage` accepts the same narrowed-payload pattern - it does
 not need to be explicitly invoked, since it's called automatically for every message on the queue
 or topic once the listener starts.
+
+To exchange JSON, send `value.toJsonString()` and receive it as a `string`. A `json` object sent
+directly becomes a `MapMessage`, which drops nested values and can't be received as `json`.
 
 ### Step 4: Run the Ballerina application
 
