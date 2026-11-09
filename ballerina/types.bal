@@ -54,8 +54,12 @@ public type Destination Queue|Topic;
 
 # ActiveMQ broker connection configuration.
 #
-# + username - Username for broker authentication (must be provided with password)
-# + password - Password for broker authentication (must be provided with username)
+# + username - Username for broker authentication. When using dedicated credential fields, it must
+#              be provided together with `password`; otherwise, both credentials can be supplied
+#              through `properties`
+# + password - Password for broker authentication. When using dedicated credential fields, it must
+#              be provided together with `username`; otherwise, both credentials can be supplied
+#              through `properties`
 # + clientID - The JMS client ID to use for identifying this client connection. If not specified,
 #              a random UUID will be generated
 # + secureSocket - SSL/TLS encryption configurations for secure broker communication
