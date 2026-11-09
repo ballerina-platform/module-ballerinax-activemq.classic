@@ -66,7 +66,7 @@ public function main() returns error? {
     );
 
     check producer->send({
-        payload: "{'item':'book','qty':2}".toBytes(),
+        payload: "{'item':'book','qty':2}",
         properties: {"region": "APAC"}
     }, {queueName: "orders.queue"});
 
@@ -74,9 +74,9 @@ public function main() returns error? {
 }
 ```
 
-`messageId` is optional — the JMS provider assigns the real one on send, and it's populated on
-any message you receive back. Set it yourself only if you have a specific reason to; use
-`correlationId` instead for application-level correlation.
+Don't set `messageId` on send: the JMS provider always assigns it, so any value you set is
+ignored. It's populated on every message you receive. Use `correlationId` for application-level
+correlation.
 
 A producer can also be configured with a default `destination`, letting you omit it on every
 `send()` call unless you need to override it for a specific message:
@@ -85,7 +85,7 @@ A producer can also be configured with a default `destination`, letting you omit
 classic:MessageProducer producer = check new ("tcp://localhost:61616",
     destination = {queueName: "orders.queue"}
 );
-check producer->send({payload: "{'item':'book','qty':2}".toBytes()});
+check producer->send({payload: "{'item':'book','qty':2}"});
 ```
 
 ### 4. Receive a message from a queue
@@ -115,7 +115,8 @@ public function main() returns error? {
 The `payload` field's declared type in the target record determines how the message body is
 converted — `string`/`xml` for a `TextMessage`, `byte[]` for a `BytesMessage`, or a `map`/record
 shape for a `MapMessage`. Omit the explicit type (`classic:Message? msg = check consumer->receive(5000);`)
-to get the JMS-message-appropriate default representation instead.
+to get the default representation instead: `byte[]` for a `TextMessage` or `BytesMessage`, and
+`map<classic:Property>` for a `MapMessage`.
 
 ### 5. Subscribe with a Listener service
 
@@ -166,7 +167,7 @@ Use a `Topic` destination when calling `send`:
 ```ballerina
 check producer->send({
     correlationId: "evt-001",
-    payload: "order placed".toBytes()
+    payload: "order placed"
 }, {topicName: "order.events"});
 ```
 
@@ -177,8 +178,8 @@ atomic operation:
 
 ```ballerina
 classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
-check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
-check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+check producer->send({correlationId: "tx-1", payload: "order A"}, {queueName: "orders.queue"});
+check producer->send({correlationId: "tx-2", payload: "audit A"}, {queueName: "audit.queue"});
 check producer->'commit();   // both messages are delivered together
 check producer->close();
 ```
@@ -203,8 +204,9 @@ classic:MessageProducer producer = check new ("ssl://localhost:61617",
 );
 ```
 
-Alternatively, use `crypto:TrustStore` / `crypto:KeyStore` (`.jks` / `.p12` files)
-instead of PEM paths.
+Alternatively, use `classic:TrustStore` / `classic:KeyStore` (`.jks` / `.p12` files)
+instead of PEM paths. The `format` field defaults to `classic:JKS`; set it to
+`classic:PKCS12` for `.p12` files.
 
 ### 9. Message selector
 
@@ -272,9 +274,9 @@ docker compose -f ballerina/tests/resources/docker-compose.yaml down
 ```
 
 The Gradle build automatically starts an ActiveMQ Classic 6.2.0 container, runs the
-integration tests, and stops the container.  If Docker is not available, the integration
-tests are skipped automatically with the message:
-`ActiveMQ integration tests skipped: Docker is not available.`
+integration tests, and stops the container.  If Docker is not available, or the build runs
+on Windows, Gradle doesn't start the broker and prints `ActiveMQ broker startup skipped`. The
+integration tests that require a live broker then fail.
 
 ### Run only the integration tests (broker already running)
 
