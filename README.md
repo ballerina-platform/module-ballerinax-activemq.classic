@@ -17,8 +17,8 @@ a broker to sending your first message.
 
 | Requirement | Version | Notes |
 |---|---|---|
-| [Ballerina Swan Lake](https://ballerina.io/downloads/) | 2201.x or later | `bal` CLI must be on `PATH` |
-| Java (JDK) | 17 or 21 | Set `JAVA_HOME` |
+| [Ballerina Swan Lake](https://ballerina.io/downloads/) | 2201.12.10 or later | `bal` CLI must be on `PATH` |
+| Java (JDK) | 21 | Set `JAVA_HOME` |
 | [Docker](https://docs.docker.com/get-docker/) | any recent version | Only needed for the local broker |
 
 ### 1. Start an ActiveMQ broker
@@ -263,7 +263,7 @@ docker compose -f ballerina/tests/resources/docker-compose.yaml down
 ### Prerequisites
 
 - Docker must be running.
-- Java 17+.
+- Java 21.
 
 ### Start the broker and run tests
 

@@ -1,16 +1,13 @@
 ## Overview
 
-[Apache ActiveMQ Classic](https://activemq.apache.org/) is a widely used, open-source message
-broker that implements the Java Message Service (JMS) API, enabling reliable, asynchronous
-communication between distributed applications through queues (point-to-point) and topics
-(publish/subscribe).
+[Apache ActiveMQ Classic](https://activemq.apache.org/) is a widely used, open-source message broker that implements the Java Message Service (JMS) API, enabling reliable, asynchronous communication between distributed applications through queues (point-to-point) and topics (publish/subscribe).
 
 The `ballerinax/activemq.classic` package provides APIs to interact with ActiveMQ Classic brokers over the
 OpenWire protocol. It allows developers to programmatically produce and consume messages, subscribe
 to queues and topics both synchronously and asynchronously, and build reliable, event-driven
 integrations that leverage ActiveMQ's messaging capabilities within Ballerina applications.
 
-### Key Features
+### Key features
 
 - Point-to-point (queue) and publish/subscribe (topic) messaging, including durable topic subscriptions
 - Both synchronous (pull-based `MessageConsumer`) and asynchronous (push-based `Listener`) consumption
