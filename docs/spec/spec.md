@@ -100,7 +100,7 @@ public type ConnectionConfiguration record {
 | Field | Description |
 |---|---|
 | `username`, `password` | Broker credentials. Provide both, or neither for anonymous access. Providing only one returns an error. |
-| `clientID` | JMS client ID. If it is not set here or in `properties`, a random UUID is used. |
+| `clientID` | JMS client ID. If it is not set here, in `properties`, or through a `jms.clientID` option in the broker URL, a random UUID is used. |
 | `secureSocket` | TLS configuration. See [Secure Communication](#23-secure-communication). |
 | `optimizeAcknowledgements` | Optimizes acknowledgement processing at the cost of possible duplicates. |
 | `setAlwaysSessionAsync` | Uses asynchronous dispatch for all sessions. |
@@ -126,7 +126,9 @@ public type SecureSocket record {|
 | `cert` | A trust store, or the path to a certificate file that the client trusts. Required. |
 | `key` | The client's key store, or a certificate and private key pair. Required only when the broker authenticates clients. |
 
-`classic:TrustStore` and `classic:KeyStore` extend the corresponding `ballerina/crypto` records with a `format` field, which is `classic:JKS` (default) or `classic:PKCS12`. `classic:CertKey` has `certFile`, `keyFile` (PKCS8) and an optional `keyPassword`.
+`classic:TrustStore` and `classic:KeyStore` extend the corresponding `ballerina/crypto` records with a `format` field of type `classic:SslStoreFormat`, which is `classic:JKS` (default) or `classic:PKCS12`. `classic:CertKey` has `certFile`, `keyFile` (PKCS8) and an optional `keyPassword`.
+
+Certificate and private key files, given as a path in `cert` or through `classic:CertKey`, must use RSA keys.
 
 ### 2.4. Prefetch Policy
 
@@ -157,7 +159,7 @@ The redelivery policy controls how a rolled-back or recovered message is retried
 | `collisionAvoidancePercent` | `15` | Percentage of randomness to apply. | `0` to `100` |
 | `preDispatchCheck` | `true` | Checks the dispatch policy before redelivering. | |
 
-Values outside the valid range return an error at initialization. A policy can be set on the connection, or per service through `classic:ServiceConfig`. The per-service policy overrides the connection policy.
+A policy can be set on the connection, or per service through `classic:ServiceConfig`. The per-service policy overrides the connection policy. Values outside the valid range return an error at initialization for a connection-level policy. A per-service policy isn't validated.
 
 ## 3. Destinations
 
@@ -178,6 +180,8 @@ public type Destination Queue|Topic;
 When `temporary` is `true`, the broker assigns the name and the given name is ignored. Each `send` to a temporary destination record creates a new temporary destination, unless the record came from a received message. A `replyTo` or `destination` value taken from a received message refers to the original destination, so it can be used to reply.
 
 ActiveMQ creates regular queues and topics on first use. Destination names may use ActiveMQ wildcards when subscribing, for example `prices.>`.
+
+ActiveMQ virtual topics use ordinary destination names. Publish to the topic `VirtualTopic.<name>`, and consume from the queue `Consumer.<group>.VirtualTopic.<name>`.
 
 ## 4. Messages
 
@@ -238,7 +242,9 @@ The runtime type of `payload` determines the JMS message that is created.
 | `map` or record | `MapMessage` |
 | Any other `anydata`, including tuples | `BytesMessage` containing the value as JSON |
 
-A `MapMessage` entry can be a `string`, `int`, `float`, `boolean`, `byte` or `byte[]`. Entries of any other type, including nested maps and other arrays, are dropped with a logged warning, so the delivered payload may be incomplete.
+A `MapMessage` entry can be a `string`, `int`, `float`, `boolean`, `byte` or `byte[]`. Entries of any other type, including `decimal` values, nested maps and other arrays, are dropped with a logged warning, so the delivered payload may be incomplete.
+
+To exchange JSON, send `value.toJsonString()` and receive it as a `string`. A `json` object sent directly becomes a `MapMessage`, which drops nested values and can't be received as `json`.
 
 ### 4.3. Receiving Payloads
 
@@ -263,7 +269,8 @@ Additional rules:
 - A sequence of XML items can be bound to `xml`. Binding a sequence to a singleton XML subtype, such as `xml:Element`, is an error.
 - Union types other than `anydata` are not bound from a `TextMessage` or `MapMessage`.
 - A `MapMessage` entry that can't be represented as a `classic:Property` is dropped with a logged warning.
-- Other JMS message types can only be received as `anydata`, using the body as UTF-8 `byte[]`. Any other declared type is an error.
+- Other JMS message types can only be received as `anydata`. A plain `Message` has no body and arrives as an empty `byte[]`. An `ObjectMessage` holding a string arrives as UTF-8 `byte[]`. A `StreamMessage`, or an `ObjectMessage` holding any other non-null value, returns an error. Any other declared type is an error.
+- `receive` and `receiveNoWait` accept a read-only target type, such as `classic:Message & readonly`, but the returned value isn't actually read-only. A service's `onMessage` parameter can't be a read-only type, and attaching such a service returns an error.
 
 A failed conversion is returned as a `classic:Error` by `receive` and `receiveNoWait`. For a service, see [Message Dispatch and Failure Handling](#75-message-dispatch-and-failure-handling).
 
@@ -281,7 +288,7 @@ Properties can be used in [message selectors](#6-message-consumer).
 
 ### 4.5. Scheduled Delivery
 
-These fields map to the ActiveMQ scheduler properties. The broker must be configured with `schedulerSupport="true"`.
+These fields map to the ActiveMQ scheduler properties. The broker must be configured with `schedulerSupport="true"`. Without it, these fields have no effect and the message is delivered immediately.
 
 | Field | ActiveMQ property | Description |
 |---|---|---|
@@ -346,7 +353,7 @@ public type ConsumerConfiguration record {|
 | `'rollback() returns Error?` | Rolls back those messages, making them available for redelivery. Valid only with `SESSION_TRANSACTED`. |
 | `close() returns Error?` | Closes the consumer and its connection. |
 
-`close` can be called more than once. Any other call after `close` returns an error. Session operations are serialized, so a `commit` or `rollback` from another strand waits for a `receive` in progress to return.
+`close` can be called more than once. After `close`, `receive`, `receiveNoWait`, `'commit` and `'rollback` return an error, but `acknowledge` doesn't check whether the consumer is closed. A `receive` that is already waiting when `close` is called can return `()`. Session operations are serialized, so a `commit` or `rollback` from another strand waits for a `receive` in progress to return.
 
 ## 7. Listener and Service
 
@@ -356,7 +363,7 @@ public type ConsumerConfiguration record {|
 
 | Function | Description |
 |---|---|
-| `attach(Service s, string[]\|string? name = ()) returns Error?` | Validates the service and creates its session and consumer. `name` is reserved and ignored. |
+| `attach(Service s, string[]\|string? name = ()) returns Error?` | Validates the service and creates its session and consumer. If the listener has already started, the service starts consuming immediately. `name` is reserved and ignored. |
 | `detach(Service s) returns Error?` | Stops consumption for the service. |
 | `'start() returns Error?` | Starts the connection and consumption for all attached services. |
 | `gracefulStop() returns Error?` | Closes each service's consumer and session, then closes the connection. |
@@ -366,7 +373,7 @@ Closing a service's consumer and session is limited to 30 seconds. If that limit
 
 ### 7.2. Service Configuration
 
-A service must have the `@classic:ServiceConfig` annotation, with either `QueueConfig` or `TopicConfig`.
+A service must have the `@classic:ServiceConfig` annotation. Its type is `classic:ServiceConfiguration`, which is either `QueueConfig` or `TopicConfig`. An empty `queueName` or `topicName` returns an error when the service is attached.
 
 Fields common to both:
 
@@ -382,9 +389,9 @@ Fields common to both:
 | Field | Default | Description |
 |---|---|---|
 | `topicName` | Required | The topic to subscribe to. |
-| `noLocal` | `false` | Doesn't deliver messages published on the same connection, or on a connection with the same client ID. |
-| `consumerType` | `DEFAULT` | `classic:DEFAULT` or `classic:DURABLE`. |
-| `subscriberName` | None | Identifies a durable subscription. Required for `DURABLE`. |
+| `noLocal` | `false` | Doesn't deliver messages published on the listener's own connection. Each connector client opens its own connection, so messages sent through a `classic:MessageProducer` are still delivered, even with the same client ID. |
+| `consumerType` | `DEFAULT` | A `classic:ConsumerType`, which is `classic:DEFAULT` or `classic:DURABLE`. |
+| `subscriberName` | None | Identifies a durable subscription. Set it for `DURABLE`. The connector doesn't check that it's present. |
 
 A durable subscription is identified by the client ID together with `subscriberName`. Set a stable `clientID` on the listener, because the generated default changes on every start.
 
