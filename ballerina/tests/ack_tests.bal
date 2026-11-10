@@ -243,7 +243,9 @@ function testItAckClientAcknowledgeBindingFailureIsDeadLettered() returns error?
         }
 
         remote function onError(Error err) returns error? {
-            lock { itAckClientBindFailErrorCount += 1; }
+            if err.message().startsWith("Data binding failed") {
+                lock { itAckClientBindFailErrorCount += 1; }
+            }
         }
     };
     check bindFailListener.attach(clientAckSvc, "it-ack-client-bindfail-svc");
@@ -292,12 +294,16 @@ function testItAckSessionTransactedBindingFailureIsDeadLettered() returns error?
         redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
     } service object {
         remote function onMessage(record {|*Message; string payload;|} message, Caller caller) returns error? {
-            lock { itAckTxBindFailGoodCount += 1; }
+            if message.payload == "binding succeeds" {
+                lock { itAckTxBindFailGoodCount += 1; }
+            }
             check caller->'commit();
         }
 
         remote function onError(Error err) returns error? {
-            lock { itAckTxBindFailErrorCount += 1; }
+            if err.message().startsWith("Data binding failed") {
+                lock { itAckTxBindFailErrorCount += 1; }
+            }
         }
     };
     check bindFailListener.attach(transactedSvc, "it-ack-tx-bindfail-svc");

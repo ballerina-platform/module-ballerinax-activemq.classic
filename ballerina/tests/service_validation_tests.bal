@@ -206,6 +206,7 @@ isolated function testSvcWithEmptyQueueName() returns error? {
         queueName: ""
     } service object {
         remote function onMessage(Message message) returns error? {
+            _ = message;
         }
     };
     Error? result = activemqListener.attach(svc);
