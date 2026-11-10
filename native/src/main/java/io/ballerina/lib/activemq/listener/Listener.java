@@ -171,7 +171,8 @@ public final class Listener {
 
     /**
      * Detaches a Ballerina service from the listener by stopping its message receiver and
-     * removing it from the listener's bookkeeping.
+     * removing it from the listener's bookkeeping. The service gets no new messages, a message in
+     * progress completes, and undelivered messages are returned to the broker.
      *
      * @param bListener  the Ballerina listener
      * @param bService   the Ballerina service to detach
@@ -222,7 +223,8 @@ public final class Listener {
 
     /**
      * Gracefully stops the ActiveMQ listener. Stops all message receivers first, then stops and
-     * closes the JMS connection, allowing in-flight messages to complete processing.
+     * closes the JMS connection. Services get no new messages, messages in progress complete, and
+     * undelivered messages are returned to the broker.
      *
      * @param bListener  the Ballerina listener object
      * @return null on success, BError on failure
@@ -249,7 +251,8 @@ public final class Listener {
 
     /**
      * Immediately stops the ActiveMQ listener. Stops all message receivers, then stops and closes
-     * the JMS connection. In-flight messages may not complete processing.
+     * the JMS connection. This currently behaves the same as {@link #gracefulStop(BObject)}: messages
+     * in progress complete, and undelivered messages are returned to the broker.
      *
      * @param bListener  the Ballerina listener object
      * @return null on success, BError on failure

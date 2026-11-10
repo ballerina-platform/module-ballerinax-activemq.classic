@@ -34,3 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documentation. A dedicated field (e.g. `clientID`) now takes precedence over the same entry in
   `properties`. Since `optimizeAcknowledgements` and `setAlwaysSessionAsync` have default values, the
   `optimizeAcknowledge` and `alwaysSessionAsync` entries in `properties` are now always ignored.
+- Fixed messages being silently lost when a `Listener` stopped. In `AUTO_ACKNOWLEDGE` and
+  `DUPS_OK_ACKNOWLEDGE` mode, messages delivered while `gracefulStop()`, `immediateStop()` or `detach()`
+  was running, or after `onError` panicked, were acknowledged without reaching `onMessage`. The service
+  now gets no new messages once stopping begins, and undelivered messages stay on the broker.
