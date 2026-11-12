@@ -30,11 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the wrong native key names.
 - Fixed `clientID` silently being a no-op: a case-mismatch in the native lookup key meant an
   explicitly configured `clientID` was always discarded in favor of a random UUID.
-- Fixed `ConnectionConfiguration.properties` overriding the dedicated connection fields, contrary to the
-  documentation. A dedicated field (e.g. `clientID`) now takes precedence over the same entry in
-  `properties`. Since `optimizeAcknowledgements` and `setAlwaysSessionAsync` have default values, the
-  `optimizeAcknowledge` and `alwaysSessionAsync` entries in `properties` are now always ignored.
-- Fixed messages being silently lost when a `Listener` stopped. In `AUTO_ACKNOWLEDGE` and
-  `DUPS_OK_ACKNOWLEDGE` mode, messages delivered while `gracefulStop()`, `immediateStop()` or `detach()`
-  was running, or after `onError` panicked, were acknowledged without reaching `onMessage`. The service
-  now gets no new messages once stopping begins, and undelivered messages stay on the broker.
+- Fixed `ConnectionConfiguration.properties` overriding dedicated fields such as `clientID`. Dedicated
+  fields now take precedence. Because `optimizeAcknowledgements` and `setAlwaysSessionAsync` have
+  defaults, the `optimizeAcknowledge` and `alwaysSessionAsync` entries are always ignored.
+- Fixed a `Listener` losing messages while stopping. In `AUTO_ACKNOWLEDGE` and `DUPS_OK_ACKNOWLEDGE`
+  modes, messages delivered during `gracefulStop()`, `immediateStop()` or `detach()`, or after `onError`
+  panicked, were acknowledged without reaching `onMessage`. They now stay on the broker.

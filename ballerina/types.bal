@@ -56,8 +56,8 @@ public type Destination Queue|Topic;
 #
 # + username - Username for broker authentication. Set it together with `password`
 # + password - Password for broker authentication. Set it together with `username`
-# + clientID - The JMS client ID to use for identifying this client connection. If not specified,
-#              a random UUID will be generated
+# + clientID - The JMS client ID for this connection. If not set here, in `properties`, or through
+#              `jms.clientID` in the URL, a random UUID is generated
 # + secureSocket - SSL/TLS encryption configurations for secure broker communication
 # + optimizeAcknowledgements - When enabled, optimizes acknowledgement processing for better
 #                              performance at the cost of potential duplicate messages
@@ -194,8 +194,8 @@ public type CertKey record {|
 #                restricted to the types the JMS specification allows as message properties
 # + payload - The message content. On send, the runtime type determines the JMS message produced
 #             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
-#             When sending a map or record, array entries are included only when their values are
-#             byte arrays; other array entries are dropped and the resulting payload may be incomplete.
+#             In a map or record, only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
+#             values are kept; others are dropped with a warning, so the payload may be incomplete.
 #             On receive, defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.

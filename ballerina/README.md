@@ -100,12 +100,10 @@ service classic:Service on mqListener {
 }
 ```
 
-> **Note:** Other ActiveMQ connection options can be passed in `properties`. A dedicated field
-> takes precedence over the same entry in `properties`. `optimizeAcknowledgements` and
-> `setAlwaysSessionAsync` have default values, so they're always set, and the `optimizeAcknowledge`
-> and `alwaysSessionAsync` entries in `properties` are ignored. Use the fields to configure them.
-> Credentials can be set either with the `username` and `password` fields, which must be set
-> together, or with `userName` and `password` entries in `properties`.
+> **Note:** Pass other ActiveMQ connection options in `properties`. A dedicated field takes
+> precedence over the same entry, and `optimizeAcknowledge` and `alwaysSessionAsync` entries are
+> always ignored because their fields have defaults. Credentials can come from the `username` and
+> `password` fields (set both) or from `userName` and `password` entries.
 
 ### Step 3: Invoke the connector operations
 

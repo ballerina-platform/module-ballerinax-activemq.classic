@@ -49,9 +49,8 @@ public isolated class Listener {
         'class: "io.ballerina.lib.activemq.listener.Listener"
     } external;
 
-    # Detaches an ActiveMQ service from the listener, stopping message consumption for that service.
-    # The service gets no new messages, a message being processed completes, and messages not yet
-    # delivered to the service stay on the broker.
+    # Detaches a service and stops its message consumption. The service gets no new messages, a
+    # message being processed completes, and undelivered messages stay on the broker.
     #
     # + s - The ActiveMQ service to detach
     # + return - `classic:Error` if the detachment fails, `()` otherwise
@@ -66,17 +65,17 @@ public isolated class Listener {
         'class: "io.ballerina.lib.activemq.listener.Listener"
     } external;
 
-    # Gracefully stops the ActiveMQ listener. Waits for currently processing messages to complete
-    # before closing the connection. Attached services get no new messages once stopping begins,
-    # and messages not yet delivered to them stay on the broker.
+    # Gracefully stops the listener. Services get no new messages once stopping begins, messages
+    # being processed complete before the connection closes, and undelivered messages stay on the
+    # broker.
     #
     # + return - `classic:Error` if stopping fails, `()` otherwise
     public isolated function gracefulStop() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.listener.Listener"
     } external;
 
-    # Stops the ActiveMQ listener. In this version, this behaves the same as `gracefulStop`: each
-    # service's consumer and session are closed, and then the connection is closed.
+    # Stops the listener. Currently behaves the same as `gracefulStop`: each service's consumer and
+    # session are closed, and then the connection is closed.
     #
     # + return - `classic:Error` if stopping fails, `()` otherwise
     public isolated function immediateStop() returns Error? = @java:Method {
