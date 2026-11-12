@@ -54,30 +54,18 @@ public type Destination Queue|Topic;
 
 # ActiveMQ broker connection configuration.
 #
-# + username - Username for broker authentication. When using dedicated credential fields, it must
-#              be provided together with `password`; otherwise, both credentials can be supplied
-#              through `properties`
-# + password - Password for broker authentication. When using dedicated credential fields, it must
-#              be provided together with `username`; otherwise, both credentials can be supplied
-#              through `properties`
+# + username - Username for broker authentication. Set it together with `password`
+# + password - Password for broker authentication. Set it together with `username`
 # + clientID - The JMS client ID to use for identifying this client connection. If not specified,
 #              a random UUID will be generated
 # + secureSocket - SSL/TLS encryption configurations for secure broker communication
 # + optimizeAcknowledgements - When enabled, optimizes acknowledgement processing for better
-#                              performance at the cost of potential duplicate messages. Because this
-#                              field has a default value, it always overrides an `optimizeAcknowledge`
-#                              entry in `properties`
-# + setAlwaysSessionAsync - When enabled, all sessions will use asynchronous message delivery. Because
-#                           this field has a default value, it always overrides an `alwaysSessionAsync`
-#                           entry in `properties`
+#                              performance at the cost of potential duplicate messages
+# + setAlwaysSessionAsync - When enabled, all sessions will use asynchronous message delivery
 # + redeliveryPolicy - Configurations that control how failed messages are redelivered
 # + prefetchPolicy - Configurations that control how many messages are prefetched from the broker
-# + properties - Additional broker-specific connection properties as key-value pairs. If the same
-#                property is configured in both this map and a dedicated field, the dedicated field
-#                value takes precedence; if the dedicated field is not set, the value from this map is
-#                used. Note: `optimizeAcknowledgements` and `setAlwaysSessionAsync` have default values
-#                and are therefore always set, so the `optimizeAcknowledge` and `alwaysSessionAsync`
-#                entries in this map are ignored. Use the dedicated fields to configure them
+# + properties - Additional broker-specific connection properties as key-value pairs. A dedicated
+#                field takes precedence over the same property in this map
 public type ConnectionConfiguration record {
     string username?;
     string password?;

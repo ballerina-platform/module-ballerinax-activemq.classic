@@ -54,7 +54,8 @@ public isolated client class MessageConsumer {
     # record {|*classic:Message; string payload;|}? typedMsg = check consumer->receive(5000);
     # ```
     #
-    # + timeoutMs - Maximum time in milliseconds to wait for a message
+    # + timeoutMs - Maximum time in milliseconds to wait for a message. A value of `0` waits
+    #               indefinitely; use `receiveNoWait` to return immediately. Must not be negative
     # + T - Optional type description of the expected message shape. The `payload` field's
     #       declared type in `T` determines how the received message body is converted; leave
     #       unset to get the JMS-message-appropriate default representation
