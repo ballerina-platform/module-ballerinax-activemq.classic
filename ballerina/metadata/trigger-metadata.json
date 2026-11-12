@@ -34,8 +34,7 @@
                 "name": "message",
                 "doc": "The delivered ActiveMQ message. With the plain classic:Message type, the payload of a text or bytes message arrives as byte[] (text is UTF-8 encoded) and a map message as a map, so convert it before use, for example with string:fromBytes. To bind the payload directly, declare a narrowed record such as record {|*classic:Message; string payload;|}: a text message binds to string or xml, a bytes message to byte[] or a JSON-compatible type, and a map message to a map or a record of simple values.",
                 "type": { "name": "Message" },
-                "presence": "required",
-                "annotations": ["$payload"]
+                "presence": "required"
               },
               {
                 "id": "$service.onMessage.caller",
@@ -80,12 +79,6 @@
       "type": { "name": "ServiceConfig" },
       "attachPoint": "service",
       "presence": "required"
-    },
-    {
-      "id": "$payload",
-      "type": { "name": "Payload" },
-      "attachPoint": "parameter",
-      "presence": "optional"
     }
   ]
 }

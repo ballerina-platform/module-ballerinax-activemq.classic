@@ -161,7 +161,9 @@ service classic:Service on mqListener {
 
 The `payload` field's declared type determines the conversion — see [section 4](#4-receive-a-message-from-a-queue)
 for the full set of supported combinations. A payload that can't be converted to the requested
-type is routed to `onError` (if defined) instead of being silently dropped.
+type is reported to `onError` (if defined) and the message is redelivered. Once the redelivery
+policy is exhausted, the broker dead-letters it: by default, a persistent message goes to
+`ActiveMQ.DLQ` and a non-persistent message is discarded.
 
 ### 6. Publish to a topic
 
@@ -311,8 +313,10 @@ The task waits until the broker's web console (port 8161) responds before return
 
 ### Test configuration
 
-Integration tests read the broker URL and credentials from
-`ballerina/tests/Config.toml` (gitignored).  Copy the committed example and adjust:
+Most integration tests use the broker URLs and credentials defined as constants in
+`ballerina/tests/test_config.bal`. The connection tests also read `brokerUrl`, `username` and
+`password` from `ballerina/tests/Config.toml` (gitignored) when it exists. To override them, copy
+the committed example and adjust:
 
 ```bash
 cp ballerina/tests/Config.toml.example ballerina/tests/Config.toml

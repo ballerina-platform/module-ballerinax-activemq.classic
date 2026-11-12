@@ -22,10 +22,11 @@ import ballerina/crypto;
 # An attached service must declare a remote `onMessage` method and may optionally declare an
 # `onError` method. The accepted signatures are:
 # ```ballerina
-# remote function onMessage(record {|*classic:Message; T payload;|} message) returns classic:Error?;
-# remote function onMessage(record {|*classic:Message; T payload;|} message, classic:Caller caller) returns classic:Error?;
-# remote function onMessage(classic:Message message) returns classic:Error?;
-# remote function onError(classic:Error err) returns classic:Error?;
+# remote function onMessage(classic:Message message) returns error?;
+# remote function onMessage(classic:Message message, classic:Caller caller) returns error?;
+# remote function onMessage(record {|*classic:Message; T payload;|} message) returns error?;
+# remote function onMessage(record {|*classic:Message; T payload;|} message, classic:Caller caller) returns error?;
+# remote function onError(classic:Error err) returns error?;
 # ```
 # Declaring a narrowed `payload` type (`T`) causes the message payload to be data-bound into that
 # type; declaring the base `classic:Message` type yields the raw payload as `anydata`.
@@ -207,13 +208,15 @@ public type CertKey record {|
 #             parameter or the `onMessage` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
 #                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.
-# + scheduledPeriod - Period in milliseconds between successive redeliveries. Use together
+# + scheduledPeriod - Period in milliseconds between repeated deliveries. Use together
 #                    with `scheduledRepeat` for periodic delivery.
 # + scheduledRepeat - Number of additional deliveries after the first. Use `-1` for
-#                    infinite repetition. Requires `scheduledPeriod` to be set.
-# + scheduledCron - Cron expression controlling the delivery schedule
-#                  (for example, `"0 0 12 * * ?"`). Overrides delay/period/repeat when set.
-#                  Requires the broker scheduler to be enabled.
+#                    infinite repetition. Use together with `scheduledPeriod`.
+# + scheduledCron - Cron expression controlling the delivery schedule, in the five-field Unix
+#                  format (for example, `"0 12 * * *"` for every day at 12:00). Takes priority
+#                  over `scheduledDelay`. If `scheduledPeriod` and `scheduledRepeat` are also set,
+#                  the repeated deliveries run each time the cron expression fires. Requires the
+#                  broker scheduler to be enabled.
 public type Message record {|
     string messageId?;
     int timestamp?;
@@ -280,7 +283,8 @@ public enum AcknowledgementMode {
 # + collisionAvoidancePercent - Percentage of randomness (0-100) to apply to redelivery delays to
 #                               avoid collision when multiple consumers retry simultaneously
 # + maximumRedeliveries - The maximum number of times to redeliver a message before it is
-#                         considered a poison message and moved to a dead letter queue
+#                         considered a poison message. By default, the broker then moves a
+#                         persistent message to `ActiveMQ.DLQ` and discards a non-persistent one
 # + maximumRedeliveryDelay - The maximum delay (in milliseconds) between redelivery attempts. This
 #                            helps to cap the delay when using exponential backoff
 # + initialRedeliveryDelay - The initial delay (in milliseconds) before the first redelivery

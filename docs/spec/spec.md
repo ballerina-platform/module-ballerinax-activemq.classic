@@ -145,7 +145,7 @@ Negative values return an error at initialization.
 
 ### 2.5. Redelivery Policy
 
-The redelivery policy controls how a rolled-back or recovered message is retried. When its retries are exhausted, the message is treated as a poison message and sent to the broker's dead letter queue.
+The redelivery policy controls how a rolled-back or recovered message is retried. When its retries are exhausted, the message is treated as a poison message and handled by the broker's dead-letter policy. By default, a persistent message is sent to `ActiveMQ.DLQ` and a non-persistent message is discarded.
 
 | Field of `classic:RedeliveryPolicy` | Default | Description | Valid values |
 |---|---|---|---|
@@ -294,8 +294,8 @@ These fields map to the ActiveMQ scheduler properties. The broker must be config
 |---|---|---|
 | `scheduledDelay` | `AMQ_SCHEDULED_DELAY` | Delay in milliseconds before first delivery. |
 | `scheduledPeriod` | `AMQ_SCHEDULED_PERIOD` | Period in milliseconds between repeated deliveries. |
-| `scheduledRepeat` | `AMQ_SCHEDULED_REPEAT` | Additional deliveries after the first. `-1` repeats indefinitely. Requires `scheduledPeriod`. |
-| `scheduledCron` | `AMQ_SCHEDULED_CRON` | Cron expression for the schedule. Overrides the other three fields. |
+| `scheduledRepeat` | `AMQ_SCHEDULED_REPEAT` | Additional deliveries after the first. `-1` repeats indefinitely. Use together with `scheduledPeriod`. |
+| `scheduledCron` | `AMQ_SCHEDULED_CRON` | Cron expression for the schedule, in the five-field Unix format, such as `0 12 * * *`. Takes priority over `scheduledDelay`. If `scheduledPeriod` and `scheduledRepeat` are also set, the repeated deliveries run each time the cron expression fires. |
 
 ## 5. Message Producer
 
@@ -431,9 +431,9 @@ Each service has its own session and receives messages one at a time, in order. 
 | Situation | Effect on the message | Notification |
 |---|---|---|
 | `onMessage` returns normally | Handled according to the acknowledgement mode. | None. |
-| `onMessage` returns an error | Not rolled back or redelivered by the connector. In `AUTO_ACKNOWLEDGE` mode the message is acknowledged. | `onError` is called. |
+| `onMessage` returns an error | Not rolled back or redelivered by the connector. In `AUTO_ACKNOWLEDGE` and `DUPS_OK_ACKNOWLEDGE` modes the message is acknowledged. | `onError` is called. |
 | `onMessage` panics | Not rolled back or redelivered by the connector. | Printed to standard error. |
-| The payload can't be bound to the declared type | Handed back for redelivery. It is sent to the dead letter queue once the redelivery policy is exhausted. | `onError` is called on every attempt. |
+| The payload can't be bound to the declared type | Handed back for redelivery in every acknowledgement mode. Once the redelivery policy is exhausted, it's handled by the broker's dead-letter policy, as described in [Redelivery Policy](#25-redelivery-policy). | `onError` is called on every attempt. |
 
 To retry after a business failure, use `SESSION_TRANSACTED` and call `caller->'rollback()`.
 
