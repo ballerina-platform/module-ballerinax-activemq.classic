@@ -99,7 +99,7 @@ public type ConnectionConfiguration record {
 
 | Field | Description |
 |---|---|
-| `username`, `password` | Broker credentials. Provide both, or neither for anonymous access. Providing only one returns an error. |
+| `username`, `password` | Broker credentials. When set as fields, provide both; providing only one returns an error. If neither field is set, credentials can be supplied through `properties`; otherwise the connection is anonymous. |
 | `clientID` | JMS client ID. If it is not set here, in `properties`, or through a `jms.clientID` option in the broker URL, a random UUID is used. |
 | `secureSocket` | TLS configuration. See [Secure Communication](#23-secure-communication). |
 | `optimizeAcknowledgements` | Optimizes acknowledgement processing at the cost of possible duplicates. |
@@ -364,9 +364,9 @@ public type ConsumerConfiguration record {|
 | Function | Description |
 |---|---|
 | `attach(Service s, string[]\|string? name = ()) returns Error?` | Validates the service and creates its session and consumer. If the listener has already started, the service starts consuming immediately. `name` is reserved and ignored. |
-| `detach(Service s) returns Error?` | Stops consumption for the service. |
+| `detach(Service s) returns Error?` | Stops consumption for the service. The service gets no new messages, a message being processed completes, and messages not yet delivered stay on the broker. |
 | `'start() returns Error?` | Starts the connection and consumption for all attached services. |
-| `gracefulStop() returns Error?` | Closes each service's consumer and session, then closes the connection. |
+| `gracefulStop() returns Error?` | Stops each service's consumption the same way as `detach`, closes its consumer and session, then closes the connection. |
 | `immediateStop() returns Error?` | In this version, behaves the same as `gracefulStop`. |
 
 Closing a service's consumer and session is limited to 30 seconds. If that limit is exceeded, the operation returns an error.
