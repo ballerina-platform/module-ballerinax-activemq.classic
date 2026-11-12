@@ -1,0 +1,91 @@
+{
+  "version": "v1.0",
+  "listeners": [
+    {
+      "id": "$listener",
+      "doc": "Connects to an ActiveMQ Classic broker and dispatches messages to attached services.",
+      "type": { "name": "Listener" },
+      "services": ["$service"],
+      "multipleServicesAllowed": true,
+      "multipleServicesOfSameTypeAllowed": true
+    }
+  ],
+  "serviceTypes": [
+    {
+      "id": "$service",
+      "doc": "Consumes messages from an ActiveMQ Classic queue or topic.",
+      "type": { "name": "Service" },
+      "concrete": false,
+      "multipleListenersAllowed": true,
+      "annotations": ["$serviceConfig"],
+      "identifier": { "presence": "optional", "form": ["stringLiteral"] },
+      "handlers": {
+        "backedByConcreteType": false,
+        "options": [
+          {
+            "id": "$service.onMessage",
+            "name": "onMessage",
+            "kind": "remote",
+            "doc": "Invoked when a message is delivered from the configured queue or topic. In AUTO_ACKNOWLEDGE and DUPS_OK_ACKNOWLEDGE modes the message is acknowledged when onMessage returns, even if it returns an error, so it is not redelivered. To have a failed message retried, use SESSION_TRANSACTED and call caller->'rollback().",
+            "presence": "required",
+            "params": [
+              {
+                "id": "$service.onMessage.message",
+                "name": "message",
+                "doc": "The delivered ActiveMQ message. With the plain classic:Message type, the payload of a text or bytes message arrives as byte[] (text is UTF-8 encoded) and a map message as a map, so convert it before use, for example with string:fromBytes. To bind the payload directly, declare a narrowed record such as record {|*classic:Message; string payload;|}: a text message binds to string or xml, a bytes message to byte[] or a JSON-compatible type, and a map message to a map or a record of simple values.",
+                "type": { "name": "Message" },
+                "presence": "required",
+                "annotations": ["$payload"]
+              },
+              {
+                "id": "$service.onMessage.caller",
+                "name": "caller",
+                "doc": "Caller used to settle the message. acknowledge applies in CLIENT_ACKNOWLEDGE mode and also confirms every earlier message delivered by the session. commit and rollback apply in SESSION_TRANSACTED mode; after rollback the message is redelivered and becomes eligible for dead-lettering according to the redelivery policy and the broker's dead-letter policy. By default, a persistent message goes to ActiveMQ.DLQ and a non-persistent message is discarded.",
+                "type": { "name": "Caller" },
+                "presence": "optional"
+              }
+            ],
+            "returns": {
+              "id": "$service.onMessage.returns",
+              "type": [{ "name": "error", "builtin": true }, { "name": "()", "builtin": true }]
+            }
+          },
+          {
+            "id": "$service.onError",
+            "name": "onError",
+            "kind": "remote",
+            "doc": "Invoked when a message's payload cannot be bound to the declared type, or when onMessage returns an error. A binding failure is redelivered in every acknowledgement mode and becomes eligible for dead-lettering according to the redelivery policy and the broker's dead-letter policy; by default, a persistent message goes to ActiveMQ.DLQ and a non-persistent message is discarded. An error returned from onMessage is only reported here and is not redelivered in AUTO_ACKNOWLEDGE or DUPS_OK_ACKNOWLEDGE mode. A panic in onMessage is not passed to onError.",
+            "presence": "optional",
+            "params": [
+              {
+                "id": "$service.onError.err",
+                "name": "err",
+                "doc": "The error raised while dispatching or processing the message.",
+                "type": { "name": "Error" },
+                "presence": "required"
+              }
+            ],
+            "returns": {
+              "id": "$service.onError.returns",
+              "type": [{ "name": "error", "builtin": true }, { "name": "()", "builtin": true }]
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "annotations": [
+    {
+      "id": "$serviceConfig",
+      "type": { "name": "ServiceConfig" },
+      "attachPoint": "service",
+      "presence": "required"
+    },
+    {
+      "id": "$payload",
+      "type": { "name": "Payload" },
+      "attachPoint": "parameter",
+      "presence": "optional"
+    }
+  ]
+}

@@ -1,0 +1,248 @@
+{
+  "version": "v1.0",
+  "metadata": {
+    "kind": "event"
+  },
+  "trigger": {
+    "displayName": "ActiveMQ Classic Event Integration",
+    "shortDisplayName": "ActiveMQ Classic",
+    "description": "Create a service to consume messages from an ActiveMQ Classic queue or topic",
+    "type": "activemq.classic",
+    "listenerKind": "activemq"
+  },
+  "readOnlyMetadata": [
+    {
+      "key": "queueName",
+      "displayName": "Queue Name",
+      "path": "ServiceConfig.queueName",
+      "extractor": "SERVICE_ANNOTATION"
+    },
+    {
+      "key": "topicName",
+      "displayName": "Topic Name",
+      "path": "ServiceConfig.topicName",
+      "extractor": "SERVICE_ANNOTATION"
+    }
+  ],
+  "initForm": {
+    "metadata": {
+      "label": "ActiveMQ Classic Service",
+      "description": "Choose the queue this service consumes from"
+    },
+    "fields": [
+      {
+        "target": {
+          "kind": "serviceAnnotationField",
+          "serviceType": "$service",
+          "annotation": "$serviceConfig",
+          "path": "queueName"
+        },
+        "metadata": {
+          "label": "Queue Name",
+          "description": "The name of the queue to consume from. To consume from a topic instead, change the service configuration to use topicName."
+        },
+        "source": {
+          "construct": {
+            "kind": "SERVICE_ANNOTATION"
+          },
+          "argument": {
+            "originalName": "ServiceConfig"
+          },
+          "module": {
+            "name": "activemq.classic"
+          },
+          "path": "queueName"
+        },
+        "state": {
+          "enabled": true,
+          "editable": true,
+          "optional": false,
+          "advanced": false
+        },
+        "key": "queueName",
+        "placeholder": "myQueue",
+        "default": "\"myQueue\""
+      }
+    ]
+  },
+  "listeners": [
+    {
+      "target": "$listener",
+      "form": {
+        "section": {
+          "label": "Configure ActiveMQ Classic Listener",
+          "description": "Select an existing listener or create a new one"
+        },
+        "createNew": {
+          "label": "Create new",
+          "description": "Create a new ActiveMQ Classic listener"
+        },
+        "listenerConfig": {
+          "label": "Listener Configurations",
+          "description": "Configure the ActiveMQ Classic broker connection"
+        },
+        "useExisting": {
+          "label": "Use existing",
+          "description": "Select an existing ActiveMQ Classic listener"
+        }
+      },
+      "formFields": {
+        "listenerVarName": {
+          "key": "listenerVarName",
+          "default": "activemqListener",
+          "metadata": {
+            "label": "Listener Name",
+            "description": "Provide a name for the listener being created"
+          },
+          "source": {
+            "construct": {
+              "kind": "LISTENER_VAR_NAME"
+            }
+          },
+          "state": {
+            "enabled": true,
+            "editable": true,
+            "optional": false,
+            "advanced": false
+          }
+        },
+        "url": {
+          "key": "url",
+          "placeholder": "tcp://localhost:61616",
+          "default": "\"tcp://localhost:61616\"",
+          "metadata": {
+            "label": "Broker URL",
+            "description": "The URL used to establish the ActiveMQ Classic connection"
+          },
+          "source": {
+            "argument": {
+              "kind": "LISTENER_PARAM_REQUIRED",
+              "position": 1
+            }
+          },
+          "state": {
+            "enabled": true,
+            "editable": true,
+            "optional": false,
+            "advanced": false
+          }
+        }
+      }
+    }
+  ],
+  "serviceTypes": [
+    {
+      "target": "$service",
+      "metadata": {
+        "label": "ActiveMQ Classic Consumer",
+        "description": "Consumes messages from an ActiveMQ Classic queue or topic."
+      },
+      "state": {
+        "editable": false,
+        "enabled": true
+      },
+      "fields": [
+        {
+          "target": {
+            "kind": "recordField",
+            "owner": "Service.properties",
+            "path": "serviceConfig"
+          },
+          "metadata": {
+            "label": "Service Configuration",
+            "description": "Queue or topic destination and consumer options."
+          },
+          "state": {
+            "enabled": true,
+            "editable": true,
+            "optional": false,
+            "advanced": false
+          },
+          "key": "serviceConfig",
+          "default": "",
+          "source": {
+            "construct": {
+              "kind": "SERVICE_ANNOTATION"
+            },
+            "argument": {
+              "originalName": "ServiceConfig"
+            },
+            "module": {
+              "name": "activemq.classic"
+            }
+          }
+        }
+      ],
+      "handlers": [
+        {
+          "target": "$service.onMessage",
+          "metadata": {
+            "label": "On Message",
+            "description": "Triggered when a message is received from the configured queue or topic."
+          },
+          "source": {
+            "construct": {
+              "kind": "FUNCTION"
+            },
+            "argument": {
+              "originalName": "onMessage"
+            },
+            "module": {
+              "name": "activemq.classic"
+            }
+          },
+          "state": {
+            "enabled": true,
+            "editable": true,
+            "optional": false
+          },
+          "nameEditable": false,
+          "repeatable": "FALSE",
+          "canAddParameters": false
+        },
+        {
+          "target": "$service.onError",
+          "metadata": {
+            "label": "On Error",
+            "description": "Triggered when an error occurs while dispatching or processing a message."
+          },
+          "source": {
+            "construct": {
+              "kind": "FUNCTION"
+            },
+            "argument": {
+              "originalName": "onError"
+            },
+            "module": {
+              "name": "activemq.classic"
+            }
+          },
+          "state": {
+            "enabled": true,
+            "editable": true,
+            "optional": true
+          },
+          "nameEditable": false,
+          "repeatable": "FALSE",
+          "canAddParameters": false
+        }
+      ]
+    }
+  ],
+  "artifactInfo": {
+    "displayLabel": "ActiveMQ Classic Event Integration",
+    "identifier": {
+      "separator": " - ",
+      "resolvers": [
+        {
+          "via": "annotationField",
+          "fields": [
+            "queueName",
+            "topicName"
+          ]
+        }
+      ]
+    }
+  },
+  "importPrefix": "classic"
+}

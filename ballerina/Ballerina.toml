@@ -8,6 +8,7 @@ repository = "https://github.com/ballerina-platform/module-ballerinax-activemq.c
 icon = "icon.png"
 license = ["Apache-2.0"]
 distribution = "2201.12.10"
+include = ["metadata/**"]
 
 [platform.java21]
 graalvmCompatible = true
