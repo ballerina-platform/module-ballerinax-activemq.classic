@@ -277,7 +277,8 @@ public enum AcknowledgementMode {
 }
 
 # Configurations for message redelivery behavior. RedeliveryPolicy defines how messages are
-# redelivered when they are rolled back. This can be set at the connection level or per service.
+# redelivered when they are rolled back, recovered, or handed back after a failed `onMessage`.
+# This can be set at the connection level or per service.
 # The service level redelivery policy overrides the connection level redelivery policy.
 #
 # + collisionAvoidancePercent - Percentage of randomness (0-100) to apply to redelivery delays to

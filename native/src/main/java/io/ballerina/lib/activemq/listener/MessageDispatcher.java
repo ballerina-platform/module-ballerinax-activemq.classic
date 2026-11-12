@@ -52,6 +52,7 @@ public class MessageDispatcher {
     private final Runtime ballerinaRuntime;
     private final Service nativeService;
     private final Session session;
+    private final boolean autoAcknowledged;
     private final OnErrorCallback onErrorCallback = new OnErrorCallback();
 
     /**
@@ -60,11 +61,15 @@ public class MessageDispatcher {
      * @param ballerinaRuntime  the Ballerina runtime for invoking service methods
      * @param nativeService     the wrapped Ballerina service
      * @param session           the JMS session for creating caller objects
+     * @param sessionAckMode    the acknowledgement mode the session was created with
      */
-    MessageDispatcher(Runtime ballerinaRuntime, Service nativeService, Session session) {
+    MessageDispatcher(Runtime ballerinaRuntime, Service nativeService, Session session, int sessionAckMode) {
         this.ballerinaRuntime = ballerinaRuntime;
         this.nativeService = nativeService;
         this.session = session;
+        // In CLIENT_ACKNOWLEDGE and SESSION_TRANSACTED sessions the service settles messages through the Caller.
+        this.autoAcknowledged = sessionAckMode == Session.AUTO_ACKNOWLEDGE
+                || sessionAckMode == Session.DUPS_OK_ACKNOWLEDGE;
     }
 
     /** Associates this dispatcher with its MessageReceiver, so a failing onError handler can stop delivery. */
@@ -72,7 +77,10 @@ public class MessageDispatcher {
         this.onErrorCallback.setReceiver(receiver);
     }
 
-    /** Dispatches a JMS message to onMessage; a returned error goes to onError, a panic is only logged. */
+    /**
+     * Dispatches a JMS message to onMessage. A returned error goes to onError and, in auto-acknowledge
+     * sessions, hands the message back for redelivery. A panic is only logged.
+     */
     public void onMessage(Message message) {
         try {
             boolean isConcurrentSafe = nativeService.isOnMessageMethodIsolated();
@@ -82,6 +90,11 @@ public class MessageDispatcher {
                     nativeService.getConsumerService(), ON_MESSAGE_METHOD, metadata, params);
             if (result instanceof BError bError) {
                 onError(bError);
+                if (autoAcknowledged) {
+                    // JMS acknowledges once this method returns normally, which would lose the message.
+                    // Throwing makes ActiveMQ redeliver it and dead-letter it after maximumRedeliveries.
+                    throw new ActiveMQMessageProcessingException(bError);
+                }
             }
         } catch (BError bError) {
             bError.printStackTrace();

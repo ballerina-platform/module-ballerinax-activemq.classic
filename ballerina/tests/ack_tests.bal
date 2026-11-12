@@ -399,6 +399,101 @@ function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error
     }
 }
 
+isolated int itAckAutoReturnedErrorCount = 0;
+isolated int itAckDupsReturnedErrorCount = 0;
+
+// In AUTO_ACKNOWLEDGE and DUPS_OK_ACKNOWLEDGE, JMS acknowledges a message once onMessage returns. When
+// onMessage returns an error, the connector hands the message back instead, so it is redelivered and
+// dead-lettered rather than lost.
+@test:Config {
+    groups: ["integration", "ack"]
+}
+function testItAckAutoAcknowledgeReturnedErrorIsDeadLettered() returns error? {
+    string queueName = "it.ack.auto.returnederror.queue";
+    string testTag = "it-ack-auto-returnederror";
+    check drainQueue(queueName);
+    check drainDeadLetters(testTag);
+    lock { itAckAutoReturnedErrorCount = 0; }
+
+    Listener returnedErrorListener = check new (brokerUrl, username = username, password = password);
+    Service autoSvc = @ServiceConfig {
+        queueName: "it.ack.auto.returnederror.queue",
+        sessionAckMode: AUTO_ACKNOWLEDGE,
+        redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock { itAckAutoReturnedErrorCount += 1; }
+            return error("intentional business failure");
+        }
+
+        remote function onError(Error err) returns error? {
+        }
+    };
+    check returnedErrorListener.attach(autoSvc, "it-ack-auto-returnederror-svc");
+    check returnedErrorListener.'start();
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({payload: "always fails", properties: {"testTag": testTag}}, {queueName});
+    check prod->close();
+
+    waitForCounts(isolated function () returns [int, int] {
+        int attempts;
+        lock { attempts = itAckAutoReturnedErrorCount; }
+        return [attempts, 0];
+    }, 3, 0);
+    check returnedErrorListener.gracefulStop();
+
+    lock {
+        test:assertEquals(itAckAutoReturnedErrorCount, 3,
+            "a message whose onMessage returns an error should be delivered 1 + maximumRedeliveries times");
+    }
+    test:assertTrue(check isDeadLettered(testTag, 10000),
+        "a message whose onMessage keeps returning an error should be moved to ActiveMQ.DLQ, not acknowledged");
+}
+
+@test:Config {
+    groups: ["integration", "ack"]
+}
+function testItAckDupsOkReturnedErrorIsDeadLettered() returns error? {
+    string queueName = "it.ack.dups.returnederror.queue";
+    string testTag = "it-ack-dups-returnederror";
+    check drainQueue(queueName);
+    check drainDeadLetters(testTag);
+    lock { itAckDupsReturnedErrorCount = 0; }
+
+    Listener returnedErrorListener = check new (brokerUrl, username = username, password = password);
+    Service dupsSvc = @ServiceConfig {
+        queueName: "it.ack.dups.returnederror.queue",
+        sessionAckMode: DUPS_OK_ACKNOWLEDGE,
+        redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock { itAckDupsReturnedErrorCount += 1; }
+            return error("intentional business failure");
+        }
+    };
+    check returnedErrorListener.attach(dupsSvc, "it-ack-dups-returnederror-svc");
+    check returnedErrorListener.'start();
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({payload: "always fails", properties: {"testTag": testTag}}, {queueName});
+    check prod->close();
+
+    waitForCounts(isolated function () returns [int, int] {
+        int attempts;
+        lock { attempts = itAckDupsReturnedErrorCount; }
+        return [attempts, 0];
+    }, 3, 0);
+    check returnedErrorListener.gracefulStop();
+
+    lock {
+        test:assertEquals(itAckDupsReturnedErrorCount, 3,
+            "a message whose onMessage returns an error should be delivered 1 + maximumRedeliveries times");
+    }
+    test:assertTrue(check isDeadLettered(testTag, 10000),
+        "a message whose onMessage keeps returning an error should be moved to ActiveMQ.DLQ, not acknowledged");
+}
+
 isolated function drainDeadLetters(string testTag) returns error? {
     MessageConsumer drainer = check new (brokerUrl, username = username, password = password,
         destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = string `testTag = '${testTag}'`);
@@ -417,10 +512,10 @@ isolated function drainDeadLetters(string testTag) returns error? {
     }
 }
 
-isolated function isDeadLettered(string testTag) returns boolean|error {
+isolated function isDeadLettered(string testTag, int timeoutMs = 2000) returns boolean|error {
     MessageConsumer dlqConsumer = check new (brokerUrl, username = username, password = password,
         destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = string `testTag = '${testTag}'`);
-    Message|Error? deadLettered = dlqConsumer->receive(2000);
+    Message|Error? deadLettered = dlqConsumer->receive(timeoutMs);
     check dlqConsumer->close();
     return deadLettered is Message;
 }

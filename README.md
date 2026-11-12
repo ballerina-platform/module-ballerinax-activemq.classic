@@ -163,7 +163,9 @@ The `payload` field's declared type determines the conversion — see [section 4
 for the full set of supported combinations. A payload that can't be converted to the requested
 type is reported to `onError` (if defined) and the message is redelivered. Once the redelivery
 policy is exhausted, the broker dead-letters it: by default, a persistent message goes to
-`ActiveMQ.DLQ` and a non-persistent message is discarded.
+`ActiveMQ.DLQ` and a non-persistent message is discarded. In the default `AUTO_ACKNOWLEDGE` mode,
+and in `DUPS_OK_ACKNOWLEDGE`, a message whose `onMessage` returns an error is redelivered the same
+way.
 
 ### 6. Publish to a topic
 
