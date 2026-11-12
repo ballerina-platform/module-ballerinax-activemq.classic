@@ -231,6 +231,11 @@
   ],
   "artifactInfo": {
     "displayLabel": "ActiveMQ Classic Event Integration",
+    "icon": {
+      "lightPath": "icons/light.svg",
+      "darkPath": "icons/dark.svg",
+      "color": "#C12766"
+    },
     "identifier": {
       "separator": " - ",
       "resolvers": [
