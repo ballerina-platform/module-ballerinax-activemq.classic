@@ -3,11 +3,12 @@ org = "ballerinax"
 name = "activemq.classic"
 version = "0.1.0"
 authors = ["Ballerina"]
-keywords = ["service", "client", "messaging", "network", "pubsub"]
+keywords = ["service", "client", "messaging", "network", "pubsub", "Vendor/Apache", "Area/Messaging", "Type/Connector", "Type/Trigger", "Name/ActiveMQ Classic"]
 repository = "https://github.com/ballerina-platform/module-ballerinax-activemq.classic"
 icon = "icon.png"
 license = ["Apache-2.0"]
 distribution = "2201.12.10"
+include = ["metadata/**"]
 
 [platform.java21]
 graalvmCompatible = true

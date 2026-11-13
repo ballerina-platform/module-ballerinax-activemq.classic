@@ -589,6 +589,68 @@ isolated function testClientSendXmlSequenceToElementFails() returns error? {
 @test:Config {
     groups: ["client"]
 }
+isolated function testClientSendEmptyXmlTextRoundTrips() returns error? {
+    check drainQueue("client.test.xml.empty.text.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    xml:Text payload = xml ``;
+    check producer->send({payload}, {queueName: "client.test.xml.empty.text.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.xml.empty.text.queue"});
+    record {|*Message; xml:Text payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "an empty xml:Text message should be received");
+    if received is Message {
+        test:assertEquals(received.payload, payload, "an empty xml:Text should round-trip through a TextMessage");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientSendXmlWithSurroundingWhitespaceRoundTrips() returns error? {
+    check drainQueue("client.test.xml.whitespace.queue");
+    MessageProducer producer = check new (BROKER_URL);
+    xml payload = xml ` <a/> `;
+    check producer->send({payload}, {queueName: "client.test.xml.whitespace.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.xml.whitespace.queue"});
+    record {|*Message; xml payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "the xml message should be received");
+    if received is Message {
+        test:assertEquals(received.payload, payload,
+            "leading and trailing whitespace should round-trip as text items");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
+isolated function testClientReceiveXmlWithDeclaration() returns error? {
+    check drainQueue("client.test.xml.declaration.queue");
+    string document = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<order><id>ORD-3</id></order>\n";
+    MessageProducer producer = check new (BROKER_URL);
+    check producer->send({payload: document}, {queueName: "client.test.xml.declaration.queue"});
+    check producer->close();
+
+    MessageConsumer consumer = check new (BROKER_URL,
+        destination = {queueName: "client.test.xml.declaration.queue"});
+    record {|*Message; xml payload;|}? received = check consumer->receive(5000);
+    check consumer->close();
+    test:assertTrue(received is Message, "the xml document message should be received");
+    if received is Message {
+        test:assertEquals(received.payload, xml `<order><id>ORD-3</id></order>`,
+            "an XML document with a declaration should bind to its root element");
+    }
+}
+
+@test:Config {
+    groups: ["client"]
+}
 isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns error? {
     check drainQueue("client.test.map.array.queue");
     MessageProducer producer = check new (BROKER_URL);

@@ -6,9 +6,10 @@ most basic point-to-point send flow: connect, send a few messages, close.
 ## Prerequisites
 
 Start a local ActiveMQ broker (see [examples/README.md](../README.md) for the shared
-`docker-compose.yaml`), then run:
+`docker-compose.yaml`), then copy the sample configuration and run:
 
 ```bash
+cp Config.toml.example Config.toml
 bal run
 ```
 
@@ -21,9 +22,9 @@ bal run
 Expected output:
 
 ```text
-time=... level=INFO ... msg="Order placed" orderId=ORD-1001 item="Wireless Mouse"
-time=... level=INFO ... msg="Order placed" orderId=ORD-1002 item="Mechanical Keyboard"
-time=... level=INFO ... msg="Order placed" orderId=ORD-1003 item="USB-C Hub"
+time=... level=INFO ... message="Order placed" orderId=ORD-1001 item="Wireless Mouse"
+time=... level=INFO ... message="Order placed" orderId=ORD-1002 item="Mechanical Keyboard"
+time=... level=INFO ... message="Order placed" orderId=ORD-1003 item="USB-C Hub"
 ```
 
 Run [Receive From Queue](../receive-from-queue/Receive%20From%20Queue.md) afterwards to pull these

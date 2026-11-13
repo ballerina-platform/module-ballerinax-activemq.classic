@@ -6,9 +6,11 @@ payload to a `string` on the way out.
 ## Prerequisites
 
 Start a local ActiveMQ broker (see [examples/README.md](../README.md)), and run
-[Send To Queue](../send-to-queue/Send%20To%20Queue.md) first so there's something to receive:
+[Send To Queue](../send-to-queue/Send%20To%20Queue.md) first so there's something to receive. Then
+copy the sample configuration and run:
 
 ```bash
+cp Config.toml.example Config.toml
 bal run
 ```
 

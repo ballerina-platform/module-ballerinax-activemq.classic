@@ -17,8 +17,8 @@ a broker to sending your first message.
 
 | Requirement | Version | Notes |
 |---|---|---|
-| [Ballerina Swan Lake](https://ballerina.io/downloads/) | 2201.x or later | `bal` CLI must be on `PATH` |
-| Java (JDK) | 17 or 21 | Set `JAVA_HOME` |
+| [Ballerina Swan Lake](https://ballerina.io/downloads/) | 2201.12.10 or later | `bal` CLI must be on `PATH` |
+| Java (JDK) | 21 | Set `JAVA_HOME` |
 | [Docker](https://docs.docker.com/get-docker/) | any recent version | Only needed for the local broker |
 
 ### 1. Start an ActiveMQ broker
@@ -66,7 +66,7 @@ public function main() returns error? {
     );
 
     check producer->send({
-        payload: "{'item':'book','qty':2}".toBytes(),
+        payload: "{'item':'book','qty':2}",
         properties: {"region": "APAC"}
     }, {queueName: "orders.queue"});
 
@@ -74,9 +74,9 @@ public function main() returns error? {
 }
 ```
 
-`messageId` is optional — the JMS provider assigns the real one on send, and it's populated on
-any message you receive back. Set it yourself only if you have a specific reason to; use
-`correlationId` instead for application-level correlation.
+Don't set `messageId` on send: the JMS provider always assigns it, so any value you set is
+ignored. It's populated on every message you receive. Use `correlationId` for application-level
+correlation.
 
 A producer can also be configured with a default `destination`, letting you omit it on every
 `send()` call unless you need to override it for a specific message:
@@ -85,7 +85,7 @@ A producer can also be configured with a default `destination`, letting you omit
 classic:MessageProducer producer = check new ("tcp://localhost:61616",
     destination = {queueName: "orders.queue"}
 );
-check producer->send({payload: "{'item':'book','qty':2}".toBytes()});
+check producer->send({payload: "{'item':'book','qty':2}"});
 ```
 
 ### 4. Receive a message from a queue
@@ -115,7 +115,11 @@ public function main() returns error? {
 The `payload` field's declared type in the target record determines how the message body is
 converted — `string`/`xml` for a `TextMessage`, `byte[]` for a `BytesMessage`, or a `map`/record
 shape for a `MapMessage`. Omit the explicit type (`classic:Message? msg = check consumer->receive(5000);`)
-to get the JMS-message-appropriate default representation instead.
+to get the default representation instead: `byte[]` for a `TextMessage` or `BytesMessage`, and
+`map<classic:Property>` for a `MapMessage`.
+
+To exchange JSON, send `value.toJsonString()` and receive it as a `string`. A `json` object sent
+directly becomes a `MapMessage`, which drops nested values and can't be received as `json`.
 
 ### 5. Subscribe with a Listener service
 
@@ -157,7 +161,12 @@ service classic:Service on mqListener {
 
 The `payload` field's declared type determines the conversion — see [section 4](#4-receive-a-message-from-a-queue)
 for the full set of supported combinations. A payload that can't be converted to the requested
-type is routed to `onError` (if defined) instead of being silently dropped.
+type is reported to `onError` (if defined) and the message is redelivered. Once the redelivery
+policy is exhausted, the broker dead-letters it: by default, a persistent message goes to
+`ActiveMQ.DLQ` and a non-persistent message is discarded. In the default `AUTO_ACKNOWLEDGE` mode,
+and in `DUPS_OK_ACKNOWLEDGE` on a queue, a message whose `onMessage` returns an error is redelivered
+the same way. On a topic in `DUPS_OK_ACKNOWLEDGE` mode, ActiveMQ doesn't redeliver failed messages,
+so use `AUTO_ACKNOWLEDGE` for a topic service that needs redelivery.
 
 ### 6. Publish to a topic
 
@@ -166,7 +175,7 @@ Use a `Topic` destination when calling `send`:
 ```ballerina
 check producer->send({
     correlationId: "evt-001",
-    payload: "order placed".toBytes()
+    payload: "order placed"
 }, {topicName: "order.events"});
 ```
 
@@ -177,8 +186,8 @@ atomic operation:
 
 ```ballerina
 classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
-check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
-check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+check producer->send({correlationId: "tx-1", payload: "order A"}, {queueName: "orders.queue"});
+check producer->send({correlationId: "tx-2", payload: "audit A"}, {queueName: "audit.queue"});
 check producer->'commit();   // both messages are delivered together
 check producer->close();
 ```
@@ -203,8 +212,9 @@ classic:MessageProducer producer = check new ("ssl://localhost:61617",
 );
 ```
 
-Alternatively, use `crypto:TrustStore` / `crypto:KeyStore` (`.jks` / `.p12` files)
-instead of PEM paths.
+Alternatively, use `classic:TrustStore` / `classic:KeyStore` (`.jks` / `.p12` files)
+instead of PEM paths. The `format` field defaults to `classic:JKS`; set it to
+`classic:PKCS12` for `.p12` files.
 
 ### 9. Message selector
 
@@ -263,7 +273,7 @@ docker compose -f ballerina/tests/resources/docker-compose.yaml down
 ### Prerequisites
 
 - Docker must be running.
-- Java 17+.
+- Java 21.
 
 ### Start the broker and run tests
 
@@ -272,9 +282,9 @@ docker compose -f ballerina/tests/resources/docker-compose.yaml down
 ```
 
 The Gradle build automatically starts an ActiveMQ Classic 6.2.0 container, runs the
-integration tests, and stops the container.  If Docker is not available, the integration
-tests are skipped automatically with the message:
-`ActiveMQ integration tests skipped: Docker is not available.`
+integration tests, and stops the container.  If Docker is not available, or the build runs
+on Windows, Gradle doesn't start the broker and prints `ActiveMQ broker startup skipped`. The
+integration tests that require a live broker then fail.
 
 ### Run only the integration tests (broker already running)
 
@@ -306,8 +316,10 @@ The task waits until the broker's web console (port 8161) responds before return
 
 ### Test configuration
 
-Integration tests read the broker URL and credentials from
-`ballerina/tests/Config.toml` (gitignored).  Copy the committed example and adjust:
+Most integration tests use the broker URLs and credentials defined as constants in
+`ballerina/tests/test_config.bal`. The connection tests also read `brokerUrl`, `username` and
+`password` from `ballerina/tests/Config.toml` (gitignored) when it exists. To override them, copy
+the committed example and adjust:
 
 ```bash
 cp ballerina/tests/Config.toml.example ballerina/tests/Config.toml

@@ -113,7 +113,8 @@ public final class Listener {
             session = connection.createSession(sessionAckMode);
             consumer = getConsumer(session, svcConfig);
 
-            MessageDispatcher messageDispatcher = new MessageDispatcher(env.getRuntime(), nativeService, session);
+            MessageDispatcher messageDispatcher =
+                    new MessageDispatcher(env.getRuntime(), nativeService, session, sessionAckMode);
             MessageReceiver receiver = new MessageReceiver(session, consumer, messageDispatcher);
             messageDispatcher.setReceiver(receiver);
             completeAttachment(Boolean.TRUE.equals(started), receiver, consumer, session, () -> {

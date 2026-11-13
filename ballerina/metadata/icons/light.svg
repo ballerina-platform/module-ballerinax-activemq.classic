@@ -1,0 +1,38 @@
+<!--
+ ~ Copyright (c) 2026, WSO2 LLC. (https://www.wso2.com) All Rights Reserved.
+ ~
+ ~ WSO2 LLC. licenses this file to you under the Apache License,
+ ~ Version 2.0 (the "License"); you may not use this file except
+ ~ in compliance with the License.
+ ~ You may obtain a copy of the License at
+ ~
+ ~     http://www.apache.org/licenses/LICENSE-2.0
+ ~
+ ~ Unless required by applicable law or agreed to in writing,
+ ~ software distributed under the License is distributed on an
+ ~ "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ ~ KIND, either express or implied. See the License for the
+ ~ specific language governing permissions and limitations
+ ~ under the License.
+ ~
+ ~ Derived from the Apache ActiveMQ logo. Apache ActiveMQ and its logo
+ ~ are trademarks of The Apache Software Foundation.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 18.062 18.062">
+	<g transform="matrix(1.750568 0 0 1.750568 -73.527298 -246.88563)">
+		<path fill="#c12766" d="M48.782 147.85l-1.925-.006-.957-1.67.967-1.664 1.925.006.957 1.67z"/>
+		<path fill="#3e489f" transform="translate(-3.042 1.746)" d="M48.782 147.85l-1.925-.006-.957-1.67.967-1.664 1.925.006.957 1.67z"/>
+		<path fill="#714099" transform="translate(-0.018 3.5)" d="M48.782 147.85l-1.925-.006-.957-1.67.967-1.664 1.925.006.957 1.67z"/>
+		<path fill="#78932c" transform="translate(-3.025 -1.73)" d="M48.782 147.85l-1.925-.006-.957-1.67.967-1.664 1.925.006.957 1.67z"/>
+		<path fill="#cf242a" transform="translate(-0.002 -3.48)" d="M48.782 147.85l-1.925-.006-.957-1.67.967-1.664 1.925.006.957 1.67z"/>
+		<g fill="#fff">
+			<circle r=".292" cx="47.824" cy="142.702"/>
+			<circle r=".292" cx="44.8" cy="144.449"/>
+			<circle r=".292" cx="44.784" cy="147.927"/>
+			<circle r=".292" cx="47.806" cy="149.68"/>
+			<circle r=".292" cx="47.825" cy="146.181"/>
+		</g>
+		<path fill="none" stroke="#fff" stroke-width=".097" d="M47.64 142.783l-2.648 1.517m-.204.377l.01 3.052m.2.325l2.624 1.56"/>
+		<path fill="none" stroke="#fff" stroke-width=".097" d="M47.815 142.907l.01 3.052m.005.446l.01 3.052m-.196-3.157l-2.648 1.517m.012-3.23l2.624 1.56"/>
+	</g>
+</svg>
