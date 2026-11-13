@@ -16,12 +16,10 @@
  * under the License.
  */
 
-package io.ballerina.lib.activemq.listener;
+package io.ballerina.lib.activemq.util;
 
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
-
-import java.util.UUID;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.CLIENT_ID;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.OPTIMIZE_ACKNOWLEDGEMENTS;
@@ -50,7 +48,7 @@ public record ConnectionConfig(
         this(
                 getOptionalStringProperty(configurations, USERNAME).orElse(null),
                 getOptionalStringProperty(configurations, PASSWORD).orElse(null),
-                getOptionalStringProperty(configurations, CLIENT_ID).orElse(UUID.randomUUID().toString()),
+                getOptionalStringProperty(configurations, CLIENT_ID).orElse(null),
                 (BMap<BString, Object>) configurations.getMapValue(SECURE_SOCKET),
                 configurations.getBooleanValue(OPTIMIZE_ACKNOWLEDGEMENTS),
                 configurations.getBooleanValue(SET_ALWAYS_SESSION_ASYNC),

@@ -25,10 +25,12 @@ Message? receivedMessageWithFields = ();
     groups: ["message-fields"]
 }
 function testAllMessageFields() returns error? {
+    check drainQueue("message-fields-test-queue");
+    lock {
+        receivedMessageWithFields = ();
+    }
     Service consumerSvc = @ServiceConfig {
-        queueName: "message-fields-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "message-fields-test-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -38,7 +40,6 @@ function testAllMessageFields() returns error? {
     };
     check messageFieldsListener.attach(consumerSvc, "message-fields-service");
 
-    // Send message with all possible JMS headers set
     check sendMessageWithAllHeaders(BROKER_URL, "message-fields-test-queue", "Test message with all headers");
     runtime:sleep(2);
     Message? msg = ();
@@ -47,16 +48,16 @@ function testAllMessageFields() returns error? {
     }
     test:assertTrue(msg is Message, "Message should be received");
     if msg is Message {
-        test:assertTrue(msg.messageId.length() > 0, "messageId should be present");
+        test:assertTrue(msg.messageId is string, "messageId should be present");
+        test:assertTrue((<string>msg.messageId).length() > 0, "messageId should be non-empty");
 
         test:assertTrue(msg.timestamp is int, "timestamp should be present");
         int timestamp = <int>msg.timestamp;
         test:assertTrue(timestamp > 0, "timestamp should be greater than 0");
 
-        test:assertTrue(msg.destination is string, "destination should be present");
-        string destination = <string>msg.destination;
-        test:assertTrue(destination.includes("message-fields-test-queue"),
-            "destination should contain queue name");
+        test:assertTrue(msg.destination is Queue, "destination should be a queue destination");
+        Queue destination = <Queue>msg.destination;
+        test:assertEquals(destination.queueName, "message-fields-test-queue");
 
         test:assertTrue(msg.persistent is boolean, "persistent should be present");
         boolean persistent = <boolean>msg.persistent;
@@ -76,7 +77,6 @@ function testAllMessageFields() returns error? {
 
         test:assertTrue(msg.expiry is int, "expiry should be present");
         int expiry = <int>msg.expiry;
-        // Expiry is absolute timestamp, not TTL - it should be > current time
         test:assertTrue(expiry > 0, "expiry should be > 0");
         test:assertTrue(expiry > timestamp, "expiry should be after message timestamp");
 
@@ -84,15 +84,16 @@ function testAllMessageFields() returns error? {
         string correlationId = <string>msg.correlationId;
         test:assertEquals(correlationId, "test-correlation-id", "correlationId should be 'test-correlation-id'");
 
-        test:assertTrue(msg.replyTo is string, "replyTo should be present");
-        string replyTo = <string>msg.replyTo;
-        test:assertEquals(replyTo, "queue://message-fields-test-queue", 
-            "replyTo should be 'queue://message-fields-test-queue'");
+        test:assertTrue(msg.replyTo is Queue, "replyTo should be a queue destination");
+        Queue replyTo = <Queue>msg.replyTo;
+        test:assertEquals(replyTo.queueName, "message-fields-test-queue");
 
-        test:assertTrue(msg.payload.length() > 0, "payload should be present");
-        string payloadStr = check string:fromBytes(msg.payload);
+        byte[] payloadBytes = check msg.payload.ensureType();
+        test:assertTrue(payloadBytes.length() > 0, "payload should be present");
+        string payloadStr = check string:fromBytes(payloadBytes);
         test:assertEquals(payloadStr, "Test message with all headers", "payload content should match");
     }
+    check messageFieldsListener.detach(consumerSvc);
 }
 
 Message? redeliveredMessage = ();
@@ -104,9 +105,7 @@ int redeliveryTestCount = 0;
 function testRedeliveredField() returns error? {
     Service consumerSvc = @ServiceConfig {
         sessionAckMode: SESSION_TRANSACTED,
-        queueName: "redelivery-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "redelivery-test-queue"
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
             int count = 0;
@@ -115,13 +114,11 @@ function testRedeliveredField() returns error? {
                 count = redeliveryTestCount;
             }
             if count == 1 {
-                // First delivery - rollback to trigger redelivery
                 lock {
                     redeliveredMessage = ();
                 }
                 check caller->'rollback();
             } else {
-                // Second delivery - should have redelivered=true
                 lock {
                     redeliveredMessage = message;
                 }
@@ -150,9 +147,7 @@ Message? messageWithType = ();
 }
 function testTypeField() returns error? {
     Service consumerSvc = @ServiceConfig {
-        queueName: "type-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "type-test-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -186,9 +181,7 @@ Message? nonPersistentMessage = ();
 }
 function testPersistentField() returns error? {
     Service consumerSvc1 = @ServiceConfig {
-        queueName: "persistent-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "persistent-test-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -199,9 +192,7 @@ function testPersistentField() returns error? {
     check messageFieldsListener.attach(consumerSvc1, "persistent-test-service");
 
     Service consumerSvc2 = @ServiceConfig {
-        queueName: "non-persistent-test-queue",
-        pollingInterval: 1,
-        receiveTimeout: 1
+        queueName: "non-persistent-test-queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -211,10 +202,8 @@ function testPersistentField() returns error? {
     };
     check messageFieldsListener.attach(consumerSvc2, "non-persistent-test-service");
 
-    // Send persistent message
     check sendPersistentMessage(BROKER_URL, "persistent-test-queue", "Persistent message");
 
-    // Send non-persistent message
     check sendNonPersistentMessage(BROKER_URL, "non-persistent-test-queue", "Non-persistent message");
 
     runtime:sleep(2);

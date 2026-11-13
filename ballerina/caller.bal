@@ -25,14 +25,14 @@ public isolated client class Caller {
     # all messages that have been received in the session up to and including this message.
     #
     # ```ballerina
-    # remote function onMessage(activemq:Message message, activemq:Caller caller) returns error? {
+    # remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
     #     // Process the message
     #     check caller->acknowledge(message);
     # }
     # ```
     #
     # + message - The ActiveMQ message to acknowledge
-    # + return - `activemq:Error` if acknowledgement fails, `()` otherwise
+    # + return - `classic:Error` if acknowledgement fails, `()` otherwise
     isolated remote function acknowledge(Message message) returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.listener.Caller"
     } external;
@@ -45,7 +45,7 @@ public isolated client class Caller {
     # check caller->'commit();
     # ```
     #
-    # + return - `activemq:Error` if the commit fails, `()` otherwise
+    # + return - `classic:Error` if the commit fails, `()` otherwise
     isolated remote function 'commit() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.listener.Caller"
     } external;
@@ -58,7 +58,7 @@ public isolated client class Caller {
     # check caller->'rollback();
     # ```
     #
-    # + return - `activemq:Error` if the rollback fails, `()` otherwise
+    # + return - `classic:Error` if the rollback fails, `()` otherwise
     isolated remote function 'rollback() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.listener.Caller"
     } external;

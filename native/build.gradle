@@ -39,6 +39,7 @@ dependencies {
     implementation group: 'jakarta.jms', name: 'jakarta.jms-api', version: "${jmsVersion}"
     implementation group: 'org.apache.activemq', name: 'activemq-client', version: "${activeMQVersion}"
     implementation group: 'org.fusesource.hawtbuf', name: 'hawtbuf', version: "${hawtbufVersion}"
+    testImplementation "org.testng:testng:${testngVersion}"
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -46,6 +47,7 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 test {
+    useTestNG()
     testLogging {
         showStackTraces = true
         showStandardStreams = true
@@ -55,7 +57,7 @@ test {
     jacoco {
         enabled = true
         destinationFile = file("$buildDir/coverage-reports/jacoco.exec")
-        includeNoLocationClasses = true
+        includeNoLocationClasses = false
     }
 }
 
@@ -91,6 +93,7 @@ checkstyle {
 }
 
 checkstyleMain.dependsOn ':checkstyle:downloadCheckstyleRuleFiles'
+checkstyleTest.dependsOn ':checkstyle:downloadCheckstyleRuleFiles'
 
 jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -99,6 +102,15 @@ jar {
         exclude 'META-INF/*.RSA', 'META-INF/*.SF', 'META-INF/*.DSA'
     }
 }
+
+// Keep test helpers out of the published native JAR.
+tasks.register('testJar', Jar) {
+    archiveBaseName = 'activemq.classic-native-tests'
+    archiveVersion = project.version.toString()
+    from sourceSets.test.output
+}
+
+assemble.dependsOn testJar
 
 compileJava {
     doFirst {

@@ -1,0 +1,16 @@
+services:
+  activemq:
+    image: 'apache/activemq-classic:6.2.0'
+    container_name: activemq-examples-server
+    ports:
+      - '127.0.0.1:61616:61616'
+      - '127.0.0.1:8161:8161'
+    environment:
+      - ACTIVEMQ_BROKER_NAME=examplesbroker
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f -u \"$$ACTIVEMQ_ADMIN_LOGIN:$$ACTIVEMQ_ADMIN_PASSWORD\" http://localhost:8161/admin/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

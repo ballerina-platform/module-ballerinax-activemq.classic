@@ -19,29 +19,24 @@ import ballerina/test;
 
 isolated int itCleanupListenerCount = 0;
 
-// TC-CLEANUP-01: Client close is idempotent — double-close must not panic
 @test:Config {
     groups: ["integration", "cleanup"]
 }
-function testItClientCloseIdempotent() returns error? {
-    Client mqClient = check new (brokerUrl, username = username, password = password);
-    check mqClient->close();
-    // Second close: () or Error are both acceptable; what matters is no panic.
-    do { check mqClient->close(); } on fail { }
+function testItProducerCloseIdempotent() returns error? {
+    MessageProducer producer = check new (brokerUrl, username = username, password = password);
+    check producer->close();
+    do { check producer->close(); } on fail { }
 }
 
-// TC-CLEANUP-02: Listener close is idempotent — double-stop must not panic
 @test:Config {
     groups: ["integration", "cleanup"]
 }
 function testItListenerCloseIdempotent() returns error? {
     Listener lst = check new (brokerUrl, username = username, password = password);
     check lst.gracefulStop();
-    // Second stop: () or Error are both acceptable; what matters is no panic.
     do { check lst.gracefulStop(); } on fail { }
 }
 
-// TC-CLEANUP-03: No message loss — send 10, receive all 10, none duplicated
 @test:Config {
     groups: ["integration", "cleanup"]
 }
@@ -51,23 +46,23 @@ function testItNoMessageLossHappyPath() returns error? {
         itCleanupListenerCount = 0;
     }
 
-    Client prod = check new (brokerUrl, username = username, password = password);
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
     int messageCount = 10;
     foreach int i in 1 ... messageCount {
-        check prod->send("it.cleanup.nomsg.queue", {
+        check prod->send({
             messageId: string `it-cleanup-${i}`,
             payload: string `message-${i}`.toBytes()
-        });
+        }, {queueName: "it.cleanup.nomsg.queue"});
     }
     check prod->close();
 
-    // Receive all 10 messages synchronously to verify no loss and no duplication.
-    Client cons = check new (brokerUrl, username = username, password = password);
+    MessageConsumer cons = check new (brokerUrl,
+        username = username, password = password, destination = {queueName: "it.cleanup.nomsg.queue"});
     int received = 0;
-    Message? msg = check cons->receiveMessage("it.cleanup.nomsg.queue", 5000);
+    Message? msg = check cons->receive(5000);
     while msg is Message {
         received += 1;
-        msg = check cons->receiveMessage("it.cleanup.nomsg.queue", 2000);
+        msg = check cons->receive(2000);
     }
     check cons->close();
 
@@ -75,7 +70,6 @@ function testItNoMessageLossHappyPath() returns error? {
         string `should receive all ${messageCount} messages — none lost, none duplicated`);
 }
 
-// TC-CLEANUP-04 (bonus): Listener service cleans up resources after attach
 @test:Config {
     groups: ["integration", "cleanup"]
 }
@@ -86,9 +80,7 @@ function testItListenerServiceCleanup() returns error? {
     }
     Listener cleanupListener = check new (brokerUrl, username = username, password = password);
     Service cleanupSvc = @ServiceConfig {
-        queueName: "it.cleanup.listener.queue",
-        pollingInterval: 1,
-        receiveTimeout: 2
+        queueName: "it.cleanup.listener.queue"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock {
@@ -99,11 +91,11 @@ function testItListenerServiceCleanup() returns error? {
     check cleanupListener.attach(cleanupSvc, "it-cleanup-svc");
     check cleanupListener.'start();
 
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("it.cleanup.listener.queue", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-cleanup-svc-01",
         payload: "cleanup test".toBytes()
-    });
+    }, {queueName: "it.cleanup.listener.queue"});
     check prod->close();
 
     runtime:sleep(4);
@@ -112,4 +104,97 @@ function testItListenerServiceCleanup() returns error? {
         test:assertEquals(itCleanupListenerCount, 1, "service should receive the message");
     }
     check cleanupListener.gracefulStop();
+}
+
+@test:Config {
+    groups: ["integration", "cleanup"]
+}
+function testItListenerStartAfterDetach() returns error? {
+    check drainQueue("it.cleanup.detach.queue");
+    Listener detachListener = check new (brokerUrl, username = username, password = password);
+    Service detachSvc = @ServiceConfig {
+        queueName: "it.cleanup.detach.queue"
+    } service object {
+        remote function onMessage(Message message) returns error? {
+        }
+    };
+    check detachListener.attach(detachSvc, "it-detach-svc");
+    check detachListener.'start();
+    check detachListener.detach(detachSvc);
+
+    check detachListener.'start();
+    check detachListener.gracefulStop();
+}
+
+@test:Config {
+    groups: ["integration", "cleanup"]
+}
+function testItListenerGracefulStopAfterPartialDetach() returns error? {
+    check drainQueue("it.cleanup.detach2.queue");
+    check drainQueue("it.cleanup.detach3.queue");
+    Listener partialDetachListener = check new (brokerUrl, username = username, password = password);
+    Service svcA = @ServiceConfig {
+        queueName: "it.cleanup.detach2.queue"
+    } service object {
+        remote function onMessage(Message message) returns error? {
+        }
+    };
+    Service svcB = @ServiceConfig {
+        queueName: "it.cleanup.detach3.queue"
+    } service object {
+        remote function onMessage(Message message) returns error? {
+        }
+    };
+    check partialDetachListener.attach(svcA, "it-detach-svc-a");
+    check partialDetachListener.attach(svcB, "it-detach-svc-b");
+    check partialDetachListener.'start();
+    check partialDetachListener.detach(svcA);
+    check partialDetachListener.gracefulStop();
+}
+
+isolated int itDetachStopsDeliveryCount = 0;
+
+@test:Config {
+    groups: ["integration", "cleanup"]
+}
+function testItListenerDetachStopsDelivery() returns error? {
+    check drainQueue("it.cleanup.detach.stops.delivery.queue");
+    lock { itDetachStopsDeliveryCount = 0; }
+    Listener detachDeliveryListener = check new (brokerUrl, username = username, password = password);
+    Service detachDeliverySvc = @ServiceConfig {
+        queueName: "it.cleanup.detach.stops.delivery.queue"
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock { itDetachStopsDeliveryCount += 1; }
+        }
+    };
+    check detachDeliveryListener.attach(detachDeliverySvc, "it-detach-stops-delivery-svc");
+    check detachDeliveryListener.'start();
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
+        messageId: "it-detach-stops-delivery-01",
+        payload: "before detach".toBytes()
+    }, {queueName: "it.cleanup.detach.stops.delivery.queue"});
+
+    runtime:sleep(3);
+    int countBeforeDetach = 0;
+    lock { countBeforeDetach = itDetachStopsDeliveryCount; }
+    test:assertEquals(countBeforeDetach, 1, "service should receive the message before detaching");
+
+    check detachDeliveryListener.detach(detachDeliverySvc);
+
+    check prod->send({
+        messageId: "it-detach-stops-delivery-02",
+        payload: "after detach".toBytes()
+    }, {queueName: "it.cleanup.detach.stops.delivery.queue"});
+    check prod->close();
+
+    runtime:sleep(3);
+    int countAfterDetach = 0;
+    lock { countAfterDetach = itDetachStopsDeliveryCount; }
+    test:assertEquals(countAfterDetach, 1,
+        "detach() should stop delivery -- the second message must not reach the detached service");
+
+    check detachDeliveryListener.gracefulStop();
 }

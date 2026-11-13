@@ -16,9 +16,6 @@
 
 import ballerina/jballerina.java;
 
-// Test producer utility functions for testing without full producer implementation
-// These functions use Java JMS client directly to send messages for testing purposes
-
 # Send a text message to a queue
 #
 # + brokerUrl - The broker URL (e.g., "tcp://localhost:61616")
@@ -75,6 +72,26 @@ isolated function sendBytesToQueue(string brokerUrl, string queueName, byte[] pa
     'class: "io.ballerina.lib.activemq.util.TestProducer"
 } external;
 
+# Send an ObjectMessage to a queue (a message type the connector cannot map to a Ballerina record)
+#
+# + brokerUrl - The broker URL (e.g., "tcp://localhost:61616")
+# + queueName - The queue name
+# + payload - The serializable object payload
+# + return - Error if sending fails
+isolated function sendObjectMessageToQueue(string brokerUrl, string queueName, string payload) returns error? =
+    @java:Method {
+    'class: "io.ballerina.lib.activemq.util.TestProducer"
+} external;
+
+# Send a TextMessage with no body set - JMS legally allows a text message with a null body.
+#
+# + brokerUrl - The broker URL (e.g., "tcp://localhost:61616")
+# + queueName - The queue name
+# + return - Error if sending fails
+isolated function sendTextMessageWithNullBody(string brokerUrl, string queueName) returns error? = @java:Method {
+    'class: "io.ballerina.lib.activemq.util.TestProducer"
+} external;
+
 # Send a message with all JMS headers set (for testing message field mapping)
 #
 # + brokerUrl - The broker URL (e.g., "tcp://localhost:61616")
@@ -114,5 +131,30 @@ isolated function sendPersistentMessage(string brokerUrl, string queueName, stri
 # + message - The message text
 # + return - Error if sending fails
 isolated function sendNonPersistentMessage(string brokerUrl, string queueName, string message) returns error? = @java:Method {
+    'class: "io.ballerina.lib.activemq.util.TestProducer"
+} external;
+
+# Sends a request with a real JMS TemporaryQueue as JMSReplyTo, then waits for a reply on it.
+# Used to verify a responder preserves and reuses the temporary destination's identity.
+#
+# + brokerUrl - The broker URL (e.g., "tcp://localhost:61616")
+# + requestQueueName - The queue to send the request to
+# + requestPayload - The request message text
+# + timeoutMs - How long to wait for a reply
+# + return - The reply text, or "" if no reply arrived within the timeout or the round trip failed
+isolated function sendRequestAndAwaitTemporaryReply(string brokerUrl, string requestQueueName,
+        string requestPayload, int timeoutMs) returns string = @java:Method {
+    'class: "io.ballerina.lib.activemq.util.TestProducer"
+} external;
+
+# Sends a text message with one property set to a type outside the 8 the connector explicitly
+# handles (a `java.util.List`, via the ActiveMQ-specific `setObjectProperty` escape hatch).
+#
+# + brokerUrl - The broker URL (e.g., "tcp://localhost:61616")
+# + queueName - The queue name
+# + message - The message text
+# + return - Error if sending fails
+isolated function sendMessageWithUnsupportedPropertyType(string brokerUrl, string queueName, string message)
+        returns error? = @java:Method {
     'class: "io.ballerina.lib.activemq.util.TestProducer"
 } external;

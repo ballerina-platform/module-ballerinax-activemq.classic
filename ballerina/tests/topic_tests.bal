@@ -21,7 +21,6 @@ isolated int itTopicSingleSubCount = 0;
 isolated int itTopicMultiSub1Count = 0;
 isolated int itTopicMultiSub2Count = 0;
 
-// TC-TOPIC-01: Publish a TextMessage to a topic and assert the subscriber receives it
 @test:Config {
     groups: ["integration", "topic-pub-sub"]
 }
@@ -30,9 +29,7 @@ function testItTopicPublishAndSubscribe() returns error? {
 
     Listener topicListener = check new (brokerUrl, username = username, password = password);
     Service topicSvc = @ServiceConfig {
-        topicName: "it.topic.single",
-        pollingInterval: 1,
-        receiveTimeout: 2
+        topicName: "it.topic.single"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock { itTopicSingleSubCount += 1; }
@@ -41,14 +38,13 @@ function testItTopicPublishAndSubscribe() returns error? {
     check topicListener.attach(topicSvc, "it-topic-single-svc");
     check topicListener.'start();
 
-    // Topics require the subscriber to be registered before the publisher sends.
     runtime:sleep(3);
 
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("topic://it.topic.single", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-topic-single-01",
         payload: "Topic publish test".toBytes()
-    });
+    }, {topicName: "it.topic.single"});
     check prod->close();
 
     runtime:sleep(5);
@@ -60,7 +56,6 @@ function testItTopicPublishAndSubscribe() returns error? {
     check topicListener.gracefulStop();
 }
 
-// TC-TOPIC-02: Two subscribers on the same topic each receive the same published message
 @test:Config {
     groups: ["integration", "topic-pub-sub"]
 }
@@ -70,9 +65,7 @@ function testItTopicMultipleSubscribers() returns error? {
 
     Listener sub1Listener = check new (brokerUrl, username = username, password = password);
     Service sub1Svc = @ServiceConfig {
-        topicName: "it.topic.multi",
-        pollingInterval: 1,
-        receiveTimeout: 2
+        topicName: "it.topic.multi"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock { itTopicMultiSub1Count += 1; }
@@ -83,9 +76,7 @@ function testItTopicMultipleSubscribers() returns error? {
 
     Listener sub2Listener = check new (brokerUrl, username = username, password = password);
     Service sub2Svc = @ServiceConfig {
-        topicName: "it.topic.multi",
-        pollingInterval: 1,
-        receiveTimeout: 2
+        topicName: "it.topic.multi"
     } service object {
         remote function onMessage(Message message) returns error? {
             lock { itTopicMultiSub2Count += 1; }
@@ -94,14 +85,13 @@ function testItTopicMultipleSubscribers() returns error? {
     check sub2Listener.attach(sub2Svc, "it-topic-multi-sub2");
     check sub2Listener.'start();
 
-    // Both subscribers must be registered before publishing.
     runtime:sleep(4);
 
-    Client prod = check new (brokerUrl, username = username, password = password);
-    check prod->send("topic://it.topic.multi", {
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({
         messageId: "it-topic-multi-01",
         payload: "Topic fan-out message".toBytes()
-    });
+    }, {topicName: "it.topic.multi"});
     check prod->close();
 
     runtime:sleep(5);

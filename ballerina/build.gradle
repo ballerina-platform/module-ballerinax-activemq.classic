@@ -24,7 +24,7 @@ plugins {
 
 description = 'Ballerina - ActiveMQ Ballerina Connector'
 
-def packageName = "activemq"
+def packageName = "activemq.classic"
 def packageOrg = "ballerinax"
 def tomlVersion = stripBallerinaExtensionVersion("${project.version}")
 def ballerinaTomlFilePlaceHolder = new File("${project.rootDir}/build-config/resources/Ballerina.toml")
@@ -57,12 +57,10 @@ configurations {
 }
 
 dependencies {
-    /* ActiveMQ dependencies */
     externalJars(group: 'org.apache.activemq', name: 'activemq-client', version: "${activeMQVersion}") {
         transitive = true
     }
 
-    /* JMS dependencies */
     externalJars(group: 'jakarta.jms', name: 'jakarta.jms-api', version: "${jmsVersion}") {
         transitive = false
     }

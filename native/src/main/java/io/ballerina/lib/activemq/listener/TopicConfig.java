@@ -18,17 +18,14 @@
 
 package io.ballerina.lib.activemq.listener;
 
-import io.ballerina.runtime.api.values.BDecimal;
+import io.ballerina.lib.activemq.util.RedeliveryPolicyConfig;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.CONSUMER_TYPE;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.EXCLUSIVE;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.MESSAGE_SELECTOR;
-import static io.ballerina.lib.activemq.util.ActiveMQConstants.MILLISECOND_MULTIPLIER;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.NO_LOCAL;
-import static io.ballerina.lib.activemq.util.ActiveMQConstants.POLLING_INTERVAL;
-import static io.ballerina.lib.activemq.util.ActiveMQConstants.RECEIVE_TIMEOUT;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.REDELIVERY_POLICY;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.SESSION_ACK_MODE;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.SUBSCRIBER_NAME;
@@ -54,16 +51,13 @@ import static io.ballerina.lib.activemq.util.ActiveMQConstants.TOPIC_NAME;
  *
  * @param subscriberName  An optional name used to identify the subscription, especially for durable
  *                        or shared subscriptions. If {@code null}, no name is associated.
- * @param pollingInterval   The polling interval in milliseconds
- * @param receiveTimeout    The timeout to wait till a `receive` action finishes when there are no messages
  * @param exclusive        If {@code true}, the subscription is exclusive, meaning only one consumer for the topic
  * @param redeliveryPolicyConfig The redelivery policy configuration for handling message redelivery
  *
  * @since 0.1.0
  */
 public record TopicConfig(String ackMode, String topicName, String messageSelector, boolean noLocal,
-                          String consumerType, String subscriberName, long pollingInterval,
-                          long receiveTimeout, boolean exclusive,
+                          String consumerType, String subscriberName, boolean exclusive,
                           RedeliveryPolicyConfig redeliveryPolicyConfig) implements ServiceConfig {
 
     @SuppressWarnings("unchecked")
@@ -77,10 +71,6 @@ public record TopicConfig(String ackMode, String topicName, String messageSelect
                 configurations.getStringValue(CONSUMER_TYPE).getValue(),
                 configurations.containsKey(SUBSCRIBER_NAME) ?
                         configurations.getStringValue(SUBSCRIBER_NAME).getValue() : null,
-                ((BDecimal) configurations.get(POLLING_INTERVAL)).decimalValue().multiply(MILLISECOND_MULTIPLIER)
-                        .longValue(),
-                ((BDecimal) configurations.get(RECEIVE_TIMEOUT)).decimalValue().multiply(MILLISECOND_MULTIPLIER)
-                        .longValue(),
                 configurations.getBooleanValue(EXCLUSIVE),
                 configurations.getMapValue(REDELIVERY_POLICY) != null ?
                         new RedeliveryPolicyConfig(

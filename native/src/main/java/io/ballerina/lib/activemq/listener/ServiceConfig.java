@@ -18,6 +18,8 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import io.ballerina.lib.activemq.util.RedeliveryPolicyConfig;
+
 /**
  * Represents the service-level configuration for an ActiveMQ service.
  *
@@ -25,10 +27,6 @@ package io.ballerina.lib.activemq.listener;
  */
 public interface ServiceConfig {
     String ackMode();
-
-    long pollingInterval();
-
-    long receiveTimeout();
 
     RedeliveryPolicyConfig redeliveryPolicyConfig();
 
