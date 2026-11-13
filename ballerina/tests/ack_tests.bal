@@ -362,11 +362,15 @@ function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error
         redeliveryPolicy: {maximumRedeliveries: 1, initialRedeliveryDelay: 200, redeliveryDelay: 200}
     } service object {
         remote function onMessage(Message message) returns error? {
-            lock { itAckPoisonGoodCount += 1; }
+            if message.payload == "delivered after the poison ack".toBytes() {
+                lock { itAckPoisonGoodCount += 1; }
+            }
         }
 
         remote function onError(Error err) returns error? {
-            lock { itAckPoisonErrorCount += 1; }
+            if err.message().includes("Forbidden class java.util.ArrayList") {
+                lock { itAckPoisonErrorCount += 1; }
+            }
         }
     };
     check poisonListener.attach(poisonSvc, "it-ack-poison-objmsg-svc");
@@ -430,11 +434,15 @@ function testItAckAutoAcknowledgeReturnedErrorIsDeadLettered() returns error? {
         redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
     } service object {
         remote function onMessage(Message message) returns error? {
-            lock { itAckAutoReturnedErrorCount += 1; }
+            if message.payload == "always fails".toBytes() {
+                lock { itAckAutoReturnedErrorCount += 1; }
+            }
             return error("intentional business failure");
         }
 
+        // Declared so the returned errors are handled here instead of being printed.
         remote function onError(Error err) returns error? {
+            _ = err.message();
         }
     };
     check returnedErrorListener.attach(autoSvc, "it-ack-auto-returnederror-svc");
@@ -476,7 +484,9 @@ function testItAckDupsOkReturnedErrorIsDeadLettered() returns error? {
         redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
     } service object {
         remote function onMessage(Message message) returns error? {
-            lock { itAckDupsReturnedErrorCount += 1; }
+            if message.payload == "always fails".toBytes() {
+                lock { itAckDupsReturnedErrorCount += 1; }
+            }
             return error("intentional business failure");
         }
     };
