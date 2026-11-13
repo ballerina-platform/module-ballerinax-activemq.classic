@@ -632,7 +632,7 @@ isolated function testClientSendXmlWithSurroundingWhitespaceRoundTrips() returns
 }
 isolated function testClientReceiveXmlWithDeclaration() returns error? {
     check drainQueue("client.test.xml.declaration.queue");
-    string document = string `<?xml version="1.0" encoding="UTF-8"?><order><id>ORD-3</id></order>`;
+    string document = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<order><id>ORD-3</id></order>\n";
     MessageProducer producer = check new (BROKER_URL);
     check producer->send({payload: document}, {queueName: "client.test.xml.declaration.queue"});
     check producer->close();
@@ -643,8 +643,8 @@ isolated function testClientReceiveXmlWithDeclaration() returns error? {
     check consumer->close();
     test:assertTrue(received is Message, "the xml document message should be received");
     if received is Message {
-        test:assertEquals(received.payload, check xml:fromString(document),
-            "an XML document with a declaration should be parsed as a document");
+        test:assertEquals(received.payload, xml `<order><id>ORD-3</id></order>`,
+            "an XML document with a declaration should bind to its root element");
     }
 }
 

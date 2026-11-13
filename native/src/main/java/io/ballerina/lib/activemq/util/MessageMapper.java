@@ -56,6 +56,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_CRON;
@@ -106,7 +107,7 @@ public class MessageMapper {
             TypeCreator.createArrayType(PredefinedTypes.TYPE_BYTE));
     private static final MapType BALLERINA_PROPERTY_TYPE = TypeCreator.createMapType(
             "Property", PROPERTY_TYPE, getModule());
-    private static final Pattern XML_DECLARATION = Pattern.compile("<\\?xml\\s");
+    private static final Pattern XML_DECLARATION = Pattern.compile("<\\?xml\\s.*?\\?>", Pattern.DOTALL);
 
     /** Converts a JMS message to a Ballerina message record shaped by bTypedesc's payload field. */
     public static BMap<BString, Object> toBallerinaMessage(Message message, BTypedesc bTypedesc)
@@ -282,19 +283,22 @@ public class MessageMapper {
     }
 
     /**
-     * Parses a TextMessage body as XML. A body with an XML declaration is parsed as a document. Anything else is
-     * parsed as a fragment inside a wrapper element, which keeps leading and trailing whitespace as text items
-     * (document parsing drops it). A body that can't be a fragment, such as one with a DOCTYPE, is parsed as a
-     * document.
+     * Parses a TextMessage body as XML. The body is parsed as a fragment inside a wrapper element, which keeps
+     * leading and trailing whitespace as text items (document parsing drops it). A body that starts with an XML
+     * declaration is a document: the declaration only describes it, and Ballerina versions handle it differently,
+     * so it's removed along with the whitespace around the root before parsing. A body that can't be a fragment,
+     * such as one with a DOCTYPE, is parsed as a document.
      */
     private static BXml parseXmlPayload(String text) {
-        if (XML_DECLARATION.matcher(text).lookingAt()) {
-            return XmlUtils.parse(text);
+        String content = text;
+        Matcher declaration = XML_DECLARATION.matcher(text);
+        if (declaration.lookingAt()) {
+            content = text.substring(declaration.end()).strip();
         }
         try {
-            return XmlUtils.parse("<ballerina-xml-sequence>" + text + "</ballerina-xml-sequence>").children();
+            return XmlUtils.parse("<ballerina-xml-sequence>" + content + "</ballerina-xml-sequence>").children();
         } catch (BError fragmentError) {
-            return XmlUtils.parse(text);
+            return XmlUtils.parse(content);
         }
     }
 
