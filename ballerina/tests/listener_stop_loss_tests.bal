@@ -61,7 +61,8 @@ function testListenerStopDoesNotLoseAutoAckMessages() returns error? {
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
     foreach int i in 1 ... STOP_LOSS_MESSAGE_COUNT {
-        check prod->send({payload: string `${idPrefix}${i}`.toBytes()}, {queueName: STOP_LOSS_QUEUE});
+        check prod->send({payload: string `${idPrefix}${i}`.toBytes(), properties: {"stopLossRun": runId}},
+            {queueName: STOP_LOSS_QUEUE});
     }
     check prod->close();
 
@@ -80,7 +81,8 @@ function testListenerStopDoesNotLoseAutoAckMessages() returns error? {
         processed = stopLossProcessedIds.clone();
     }
     map<boolean> remaining = check drainStopLossQueue(STOP_LOSS_QUEUE, idPrefix);
-    map<boolean> deadLettered = check drainStopLossQueue(ACTIVEMQ_DLQ, idPrefix);
+    // ActiveMQ.DLQ is shared, so only this run's messages are received from it.
+    map<boolean> deadLettered = check drainStopLossQueue(ACTIVEMQ_DLQ, idPrefix, string `stopLossRun = '${runId}'`);
 
     string[] lost = [];
     foreach int i in 1 ... STOP_LOSS_MESSAGE_COUNT {
@@ -108,26 +110,19 @@ isolated function processedCount() returns int {
     }
 }
 
-// Receives every message on the queue and returns the ids that belong to this run. Messages from
-// other runs or tests are consumed but ignored.
-function drainStopLossQueue(string queueName, string idPrefix) returns map<boolean>|error {
-    MessageConsumer consumer = check new (brokerUrl, username = username, password = password,
-        destination = {queueName});
+// Receives every message on the queue that matches the selector, if one is given, and returns the
+// ids that belong to this run. Other matching messages are consumed but ignored.
+function drainStopLossQueue(string queueName, string idPrefix, string? messageSelector = ())
+        returns map<boolean>|error {
+    MessageConsumer consumer = messageSelector is string
+        ? check new (brokerUrl, username = username, password = password, destination = {queueName},
+            messageSelector = messageSelector)
+        : check new (brokerUrl, username = username, password = password, destination = {queueName});
     map<boolean> ids = {};
-    int unreadable = 0;
     while true {
-        Message|Error? message = consumer->receive(2000);
+        Message? message = check consumer->receive(2000);
         if message is () {
             break;
-        }
-        if message is Error {
-            // A message this connector can't read, such as an ObjectMessage dead-lettered by another test,
-            // is already consumed by the receive, so it's skipped like any other foreign message.
-            unreadable += 1;
-            if unreadable > 10 {
-                return message;
-            }
-            continue;
         }
         anydata payload = message.payload;
         if payload is byte[] {

@@ -38,4 +38,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   defaults, the `optimizeAcknowledge` and `alwaysSessionAsync` entries are always ignored.
 - Fixed a `Listener` losing messages while stopping. In `AUTO_ACKNOWLEDGE` and `DUPS_OK_ACKNOWLEDGE`
   modes, messages delivered during `gracefulStop()`, `immediateStop()` or `detach()`, or after `onError`
-  panicked, were acknowledged without reaching `onMessage`. They now stay on the broker.
+  panicked, were acknowledged without reaching `onMessage`. They now stay on the broker for queues and
+  durable subscriptions.

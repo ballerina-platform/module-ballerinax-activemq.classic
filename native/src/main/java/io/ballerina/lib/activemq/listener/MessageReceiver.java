@@ -90,8 +90,9 @@ public class MessageReceiver implements MessageListener {
      * <p>
      * First clears this receiver as the consumer's message listener, so the service is given no new
      * messages. A message the provider has already handed to {@link #onMessage} still completes.
-     * Messages that arrive after the listener is cleared stay unacknowledged in the consumer's buffer,
-     * and closing the consumer returns them to the broker for redelivery.
+     * Messages that arrive after the listener is cleared stay unacknowledged in the consumer's buffer.
+     * For a queue or durable subscription, closing the consumer returns them to the broker for
+     * redelivery; a non-durable topic subscription ends with the consumer, so they aren't kept.
      * <p>
      * Then closes the JMS consumer and session on a dedicated thread, bounded by a 30-second timeout,
      * since closing them from the JMS delivery thread itself (e.g. from within {@code onMessage}) can

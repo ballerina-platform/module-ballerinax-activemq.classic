@@ -195,7 +195,8 @@ public type CertKey record {|
 # + payload - The message content. On send, the runtime type determines the JMS message produced
 #             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
 #             In a map or record, only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
-#             values are kept; others are dropped with a warning, so the payload may be incomplete.
+#             values are kept; `()` values are dropped silently and others with a warning, so the
+#             payload may be incomplete.
 #             On receive, defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.

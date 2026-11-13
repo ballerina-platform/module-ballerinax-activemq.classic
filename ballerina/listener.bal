@@ -50,7 +50,8 @@ public isolated class Listener {
     } external;
 
     # Detaches a service and stops its message consumption. The service gets no new messages, a
-    # message being processed completes, and undelivered messages stay on the broker.
+    # message being processed completes, and undelivered messages stay on the broker for a queue or
+    # durable subscription. A non-durable topic subscription ends, so its undelivered messages aren't kept.
     #
     # + s - The ActiveMQ service to detach
     # + return - `classic:Error` if the detachment fails, `()` otherwise
@@ -67,7 +68,8 @@ public isolated class Listener {
 
     # Gracefully stops the listener. Services get no new messages once stopping begins, messages
     # being processed complete before the connection closes, and undelivered messages stay on the
-    # broker.
+    # broker for queues and durable subscriptions. Non-durable topic subscriptions end, so their
+    # undelivered messages aren't kept.
     #
     # + return - `classic:Error` if stopping fails, `()` otherwise
     public isolated function gracefulStop() returns Error? = @java:Method {
