@@ -259,7 +259,9 @@ public class MessageMapper {
             if (typeTag == TypeTags.XML_TAG) {
                 return xmlPayload;
             }
-            if (!xmlPayload.isSingleton()) {
+            // An empty sequence is a valid xml:Text, so it's left to the conversion below.
+            boolean emptyText = typeTag == TypeTags.XML_TEXT_TAG && xmlPayload.isEmpty();
+            if (!xmlPayload.isSingleton() && !emptyText) {
                 throw new ActiveMQDatabindingException(
                         String.format("Data binding failed: Cannot bind XML sequence to singleton type '%s'",
                                 payloadType));
