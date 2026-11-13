@@ -83,7 +83,8 @@ public final class SessionResourceUtils {
             }
             try {
                 return action.run();
-            } catch (JMSException e) {
+            } catch (JMSException | IllegalArgumentException e) {
+                // activemq-client throws IllegalArgumentException for invalid names, e.g. an empty topic name.
                 return createError(ACTIVEMQ_ERROR, String.format("Failed to %s: %s", operation, e.getMessage()), e);
             } catch (ActiveMQDatabindingException e) {
                 return createError(ACTIVEMQ_ERROR, e.getMessage(), e);

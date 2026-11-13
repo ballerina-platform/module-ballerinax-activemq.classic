@@ -212,3 +212,53 @@ function testConfigSurfaceClientIdDurableReconnect() returns error? {
         "reconnecting with the same clientID should resume the durable subscription and deliver " +
             "the message that arrived while offline");
 }
+
+// The broker rejects a second live connection that reuses a client ID, which lets these tests observe
+// which client ID a connection actually registered with.
+@test:Config {
+    groups: ["integration", "config-surface"]
+}
+function testConfigSurfaceClientIdFieldOverridesProperties() returns error? {
+    string fieldClientId = "it-config-clientid-precedence-field";
+    string propertyClientId = "it-config-clientid-precedence-property";
+    Queue destination = {queueName: "it.config.clientid.precedence.queue"};
+
+    MessageConsumer holder = check new (brokerUrl, username = username, password = password,
+        clientID = fieldClientId, properties = {"clientID": propertyClientId}, destination = destination);
+    MessageConsumer|Error reuseFieldId = new (brokerUrl, username = username, password = password,
+        clientID = fieldClientId, destination = destination);
+    MessageConsumer|Error reusePropertyId = new (brokerUrl, username = username, password = password,
+        clientID = propertyClientId, destination = destination);
+
+    check holder->close();
+    if reuseFieldId is MessageConsumer {
+        check reuseFieldId->close();
+    }
+    if reusePropertyId is MessageConsumer {
+        check reusePropertyId->close();
+    }
+    test:assertTrue(reuseFieldId is Error,
+        "the dedicated clientID field should take precedence over the clientID in properties");
+    test:assertTrue(reusePropertyId is MessageConsumer,
+        "the clientID in properties should be ignored when the dedicated clientID field is set");
+}
+
+@test:Config {
+    groups: ["integration", "config-surface"]
+}
+function testConfigSurfaceClientIdFallsBackToProperties() returns error? {
+    string propertyClientId = "it-config-clientid-fallback-property";
+    Queue destination = {queueName: "it.config.clientid.fallback.queue"};
+
+    MessageConsumer holder = check new (brokerUrl, username = username, password = password,
+        properties = {"clientID": propertyClientId}, destination = destination);
+    MessageConsumer|Error reusePropertyId = new (brokerUrl, username = username, password = password,
+        clientID = propertyClientId, destination = destination);
+
+    check holder->close();
+    if reusePropertyId is MessageConsumer {
+        check reusePropertyId->close();
+    }
+    test:assertTrue(reusePropertyId is Error,
+        "the clientID in properties should be used when the dedicated clientID field is not set");
+}

@@ -54,19 +54,18 @@ public type Destination Queue|Topic;
 
 # ActiveMQ broker connection configuration.
 #
-# + username - Username for broker authentication (must be provided with password)
-# + password - Password for broker authentication (must be provided with username)
-# + clientID - The JMS client ID to use for identifying this client connection. If not specified,
-#              a random UUID will be generated
+# + username - Username for broker authentication. Set it together with `password`
+# + password - Password for broker authentication. Set it together with `username`
+# + clientID - The JMS client ID for this connection. If not set here, in `properties`, or through
+#              `jms.clientID` in the URL, a random UUID is generated
 # + secureSocket - SSL/TLS encryption configurations for secure broker communication
 # + optimizeAcknowledgements - When enabled, optimizes acknowledgement processing for better
 #                              performance at the cost of potential duplicate messages
 # + setAlwaysSessionAsync - When enabled, all sessions will use asynchronous message delivery
 # + redeliveryPolicy - Configurations that control how failed messages are redelivered
 # + prefetchPolicy - Configurations that control how many messages are prefetched from the broker
-# + properties - Additional broker-specific connection properties as key-value pairs. Note: If the
-#                same property is configured in both this map and dedicated fields, the dedicated
-#                field value takes precedence
+# + properties - Additional broker-specific connection properties as key-value pairs. A dedicated
+#                field takes precedence over the same property in this map
 public type ConnectionConfiguration record {
     string username?;
     string password?;
@@ -194,7 +193,10 @@ public type CertKey record {|
 # + properties - Application-specific custom properties attached to the message. Values are
 #                restricted to the types the JMS specification allows as message properties
 # + payload - The message content. On send, the runtime type determines the JMS message produced
-#             (`string` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
+#             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
+#             In a map or record, only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
+#             values are kept; `()` values are dropped silently and others with a warning, so the
+#             payload may be incomplete.
 #             On receive, defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.

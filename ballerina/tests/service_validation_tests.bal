@@ -197,3 +197,24 @@ isolated function testSvcWithExtraRequiredFieldOnMessage() returns error? {
                 "Expected error about an incompatible onMessage parameter type");
     }
 }
+
+@test:Config {
+    groups: ["service", "validations"]
+}
+isolated function testSvcWithEmptyQueueName() returns error? {
+    Service svc = @ServiceConfig {
+        queueName: ""
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            _ = message;
+        }
+    };
+    Error? result = activemqListener.attach(svc);
+    test:assertTrue(result is Error, "attaching a service with an empty queue name should return an Error, not panic");
+    if result is Error {
+        test:assertEquals(
+                result.message(),
+                "Failed to attach service to listener: Invalid destination name: a non-empty name is required",
+                "Invalid error message received");
+    }
+}

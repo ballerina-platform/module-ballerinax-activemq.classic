@@ -198,3 +198,229 @@ function testItAckDupsOkAcknowledge() returns error? {
     }
     check dupsOkListener.gracefulStop();
 }
+
+isolated int itAckClientBindFailGoodCount = 0;
+isolated int itAckClientBindFailErrorCount = 0;
+isolated int itAckTxBindFailGoodCount = 0;
+isolated int itAckTxBindFailErrorCount = 0;
+
+isolated function waitForCounts(isolated function () returns [int, int] readCounts,
+        int expectedGood, int expectedError, decimal timeoutSeconds = 15) {
+    decimal waited = 0;
+    while waited < timeoutSeconds {
+        [int, int] [good, errs] = readCounts();
+        if good >= expectedGood && errs >= expectedError {
+            return;
+        }
+        runtime:sleep(0.25d);
+        waited += 0.25d;
+    }
+}
+
+// A message that fails data binding never reaches onMessage, so the service has no Caller to roll it
+// back with. The connector hands it back instead, so it is redelivered and dead-lettered like in
+// AUTO_ACKNOWLEDGE rather than being removed by the next message's acknowledge or commit.
+@test:Config {
+    groups: ["integration", "ack"]
+}
+function testItAckClientAcknowledgeBindingFailureIsDeadLettered() returns error? {
+    string queueName = "it.ack.client.bindfail.queue";
+    string testTag = "it-ack-client-bindfail";
+    check drainQueue(queueName);
+    check drainDeadLetters(testTag);
+    lock { itAckClientBindFailGoodCount = 0; }
+    lock { itAckClientBindFailErrorCount = 0; }
+
+    Listener bindFailListener = check new (brokerUrl, username = username, password = password);
+    Service clientAckSvc = @ServiceConfig {
+        queueName: "it.ack.client.bindfail.queue",
+        sessionAckMode: CLIENT_ACKNOWLEDGE,
+        redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
+    } service object {
+        remote function onMessage(record {|*Message; string payload;|} message, Caller caller) returns error? {
+            lock { itAckClientBindFailGoodCount += 1; }
+            check caller->acknowledge(message);
+        }
+
+        remote function onError(Error err) returns error? {
+            if err.message().startsWith("Data binding failed") {
+                lock { itAckClientBindFailErrorCount += 1; }
+            }
+        }
+    };
+    check bindFailListener.attach(clientAckSvc, "it-ack-client-bindfail-svc");
+    check bindFailListener.'start();
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({payload: "binding fails".toBytes(), properties: {"testTag": testTag}}, {queueName});
+    check prod->send({payload: "binding succeeds"}, {queueName});
+    check prod->close();
+
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckClientBindFailGoodCount; }
+        lock { errs = itAckClientBindFailErrorCount; }
+        return [good, errs];
+    }, 1, 3);
+    check bindFailListener.gracefulStop();
+
+    lock {
+        test:assertEquals(itAckClientBindFailGoodCount, 1, "the bindable message should reach onMessage once");
+    }
+    lock {
+        test:assertEquals(itAckClientBindFailErrorCount, 3,
+            "the failed message should be delivered 1 + maximumRedeliveries times");
+    }
+    test:assertTrue(check isDeadLettered(testTag),
+        "a message that failed data binding should be moved to ActiveMQ.DLQ, not acknowledged");
+}
+
+@test:Config {
+    groups: ["integration", "ack"]
+}
+function testItAckSessionTransactedBindingFailureIsDeadLettered() returns error? {
+    string queueName = "it.ack.tx.bindfail.queue";
+    string testTag = "it-ack-tx-bindfail";
+    check drainQueue(queueName);
+    check drainDeadLetters(testTag);
+    lock { itAckTxBindFailGoodCount = 0; }
+    lock { itAckTxBindFailErrorCount = 0; }
+
+    Listener bindFailListener = check new (brokerUrl, username = username, password = password);
+    Service transactedSvc = @ServiceConfig {
+        queueName: "it.ack.tx.bindfail.queue",
+        sessionAckMode: SESSION_TRANSACTED,
+        redeliveryPolicy: {maximumRedeliveries: 2, initialRedeliveryDelay: 500, redeliveryDelay: 500}
+    } service object {
+        remote function onMessage(record {|*Message; string payload;|} message, Caller caller) returns error? {
+            if message.payload == "binding succeeds" {
+                lock { itAckTxBindFailGoodCount += 1; }
+            }
+            check caller->'commit();
+        }
+
+        remote function onError(Error err) returns error? {
+            if err.message().startsWith("Data binding failed") {
+                lock { itAckTxBindFailErrorCount += 1; }
+            }
+        }
+    };
+    check bindFailListener.attach(transactedSvc, "it-ack-tx-bindfail-svc");
+    check bindFailListener.'start();
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({payload: "binding fails".toBytes(), properties: {"testTag": testTag}}, {queueName});
+    check prod->send({payload: "binding succeeds"}, {queueName});
+    check prod->close();
+
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckTxBindFailGoodCount; }
+        lock { errs = itAckTxBindFailErrorCount; }
+        return [good, errs];
+    }, 1, 3);
+    check bindFailListener.gracefulStop();
+
+    lock {
+        test:assertEquals(itAckTxBindFailGoodCount, 1, "the bindable message should reach onMessage once");
+    }
+    lock {
+        test:assertEquals(itAckTxBindFailErrorCount, 3,
+            "the failed message should be delivered 1 + maximumRedeliveries times");
+    }
+    test:assertTrue(check isDeadLettered(testTag),
+        "a message that failed data binding should be moved to ActiveMQ.DLQ, not committed");
+}
+
+isolated int itAckPoisonErrorCount = 0;
+isolated int itAckPoisonGoodCount = 0;
+
+// When a message runs out of redeliveries, ActiveMQ sends the broker a poison ack carrying the failure. The
+// broker must accept it even when the failure came from an ObjectMessage of an untrusted class, so the
+// listener's connection survives and later messages are still delivered.
+@test:Config {
+    groups: ["integration", "ack"]
+}
+function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error? {
+    string queueName = "it.ack.poison.objmsg.queue";
+    check drainQueue(queueName);
+    lock { itAckPoisonErrorCount = 0; }
+    lock { itAckPoisonGoodCount = 0; }
+
+    Listener poisonListener = check new (brokerUrl, username = username, password = password);
+    Service poisonSvc = @ServiceConfig {
+        queueName: "it.ack.poison.objmsg.queue",
+        redeliveryPolicy: {maximumRedeliveries: 1, initialRedeliveryDelay: 200, redeliveryDelay: 200}
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock { itAckPoisonGoodCount += 1; }
+        }
+
+        remote function onError(Error err) returns error? {
+            lock { itAckPoisonErrorCount += 1; }
+        }
+    };
+    check poisonListener.attach(poisonSvc, "it-ack-poison-objmsg-svc");
+    check poisonListener.'start();
+
+    check sendObjectMessageToQueue(brokerUrl, queueName, "unreadable-payload");
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckPoisonGoodCount; }
+        lock { errs = itAckPoisonErrorCount; }
+        return [good, errs];
+    }, 0, 2);
+    // Gives the broker time to process the poison ack before the next message is sent.
+    runtime:sleep(1);
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({payload: "delivered after the poison ack"}, {queueName});
+    check prod->close();
+
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckPoisonGoodCount; }
+        lock { errs = itAckPoisonErrorCount; }
+        return [good, errs];
+    }, 1, 2);
+    check poisonListener.gracefulStop();
+
+    lock {
+        test:assertEquals(itAckPoisonErrorCount, 2,
+            "the unreadable message should fail 1 + maximumRedeliveries times");
+    }
+    lock {
+        test:assertEquals(itAckPoisonGoodCount, 1,
+            "the listener's connection should survive the poison ack and deliver the next message");
+    }
+}
+
+isolated function drainDeadLetters(string testTag) returns error? {
+    MessageConsumer drainer = check new (brokerUrl, username = username, password = password,
+        destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = string `testTag = '${testTag}'`);
+    error? drainError = ();
+    do {
+        Message? msg = check drainer->receive(1000);
+        while msg is Message {
+            msg = check drainer->receive(500);
+        }
+    } on fail error e {
+        drainError = e;
+    }
+    check drainer->close();
+    if drainError is error {
+        return drainError;
+    }
+}
+
+isolated function isDeadLettered(string testTag) returns boolean|error {
+    MessageConsumer dlqConsumer = check new (brokerUrl, username = username, password = password,
+        destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = string `testTag = '${testTag}'`);
+    Message|Error? deadLettered = dlqConsumer->receive(2000);
+    check dlqConsumer->close();
+    return deadLettered is Message;
+}

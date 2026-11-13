@@ -100,6 +100,11 @@ service classic:Service on mqListener {
 }
 ```
 
+> **Note:** Pass other ActiveMQ connection options in `properties`. A dedicated field takes
+> precedence over the same entry, and `optimizeAcknowledge` and `alwaysSessionAsync` entries are
+> always ignored because their fields have defaults. Credentials can come from the `username` and
+> `password` fields (set both) or from `userName` and `password` entries.
+
 ### Step 3: Invoke the connector operations
 
 Now you can use the available connector operations to interact with the ActiveMQ broker.

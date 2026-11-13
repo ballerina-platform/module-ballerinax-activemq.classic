@@ -85,20 +85,42 @@ public class MessageDispatcher {
             }
         } catch (BError bError) {
             bError.printStackTrace();
-        } catch (JMSException e) {
-            onError(e);
-            throw new ActiveMQMessageProcessingException(e);
-        } catch (ActiveMQDatabindingException e) {
+        } catch (JMSException | ActiveMQDatabindingException e) {
+            undoDelivery();
             onError(e);
             throw new ActiveMQMessageProcessingException(e);
         }
     }
 
+    /**
+     * Hands back a message the service never received, so it is redelivered and dead-lettered after
+     * maximumRedeliveries. ActiveMQ only does this itself for auto-ack sessions; in transacted and client-ack
+     * sessions the next commit/acknowledge would otherwise remove it.
+     */
+    private void undoDelivery() {
+        try {
+            if (session.getTransacted()) {
+                session.rollback();
+            } else if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
+                session.recover();
+            }
+        } catch (JMSException e) {
+            ERR_OUT.println("Failed to roll back the message after a processing failure: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Thrown back to ActiveMQ so the message is handed back. It deliberately has no cause: once redeliveries run
+     * out, ActiveMQ sends this exception to the broker in the poison ack, and the broker closes the whole
+     * connection if it can't rebuild a cause, such as the ClassNotFoundException behind an untrusted
+     * ObjectMessage. The failure's description is kept in the message, which the broker records on the
+     * dead-lettered message as dlqDeliveryFailureCause.
+     */
     private static final class ActiveMQMessageProcessingException extends RuntimeException {
         private static final long serialVersionUID = 1L;
 
-        ActiveMQMessageProcessingException(Throwable cause) {
-            super(cause);
+        ActiveMQMessageProcessingException(Throwable failure) {
+            super(String.valueOf(failure));
         }
     }
 

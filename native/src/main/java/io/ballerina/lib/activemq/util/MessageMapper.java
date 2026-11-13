@@ -38,6 +38,7 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.api.values.BTypedesc;
+import io.ballerina.runtime.api.values.BXml;
 import jakarta.jms.BytesMessage;
 import jakarta.jms.DeliveryMode;
 import jakarta.jms.Destination;
@@ -253,12 +254,37 @@ public class MessageMapper {
         if (typeTag == TypeTags.STRING_TAG) {
             return StringUtils.fromString(text);
         }
-        if (typeTag == TypeTags.XML_TAG) {
-            return XmlUtils.parse(text);
+        if (TypeTags.isXMLTypeTag(typeTag)) {
+            BXml xmlPayload = parseXmlPayload(text);
+            if (typeTag == TypeTags.XML_TAG) {
+                return xmlPayload;
+            }
+            if (!xmlPayload.isSingleton()) {
+                throw new ActiveMQDatabindingException(
+                        String.format("Data binding failed: Cannot bind XML sequence to singleton type '%s'",
+                                payloadType));
+            }
+            try {
+                return ValueUtils.convert(xmlPayload, payloadType);
+            } catch (BError bError) {
+                throw new ActiveMQDatabindingException(
+                        String.format("Data binding failed: Cannot bind XML payload to type '%s': %s",
+                                payloadType, bError.getDetails()));
+            }
         }
         throw new ActiveMQDatabindingException(
                 String.format("Data binding failed: Cannot bind TextMessage to type '%s'. "
                         + "Expected 'string' or 'xml'", payloadType));
+    }
+
+    private static BXml parseXmlPayload(String text) {
+        try {
+            return XmlUtils.parse(text);
+        } catch (BError ignored) {
+            BXml wrappedXml = XmlUtils.parse("<ballerina-xml-sequence>" + text
+                    + "</ballerina-xml-sequence>");
+            return wrappedXml.children();
+        }
     }
 
     private static Object getPayloadFromMapMessage(MapMessage message, Type payloadType, int typeTag)
@@ -308,7 +334,7 @@ public class MessageMapper {
 
     private static Object getPayloadFromBytesMessage(BytesMessage message, Type payloadType, int typeTag)
             throws JMSException {
-        if (typeTag == TypeTags.STRING_TAG || typeTag == TypeTags.XML_TAG) {
+        if (typeTag == TypeTags.STRING_TAG || TypeTags.isXMLTypeTag(typeTag)) {
             throw new ActiveMQDatabindingException(
                     String.format("Data binding failed: Cannot bind BytesMessage to type '%s'. "
                             + "Use TextMessage for string/xml payloads", payloadType));
@@ -461,7 +487,7 @@ public class MessageMapper {
         return jmsMsg;
     }
 
-    /** Maps payload's runtime type: string/byte[]/map -> Text/Bytes/Map, other anydata -> JSON bytes. */
+    /** Maps payload's runtime type: string/xml/byte[]/map -> Text/Text/Bytes/Map, other anydata -> JSON bytes. */
     @SuppressWarnings("unchecked")
     private static Message createOutgoingMessage(Session session, Object payload) throws JMSException {
         if (payload instanceof BString bString) {
@@ -469,7 +495,13 @@ public class MessageMapper {
             textMessage.setText(bString.getValue());
             return textMessage;
         }
+        if (payload instanceof BXml bXml) {
+            TextMessage textMessage = session.createTextMessage();
+            textMessage.setText(StringUtils.getStringValue(bXml));
+            return textMessage;
+        }
         if (payload instanceof BArray bArray
+                && TypeUtils.getReferredType(TypeUtils.getType(bArray)).getTag() != TypeTags.TUPLE_TAG
                 && TypeUtils.getReferredType(bArray.getElementType()).getTag() == TypeTags.BYTE_TAG) {
             BytesMessage bytesMessage = session.createBytesMessage();
             bytesMessage.writeBytes(bArray.getBytes());
@@ -511,7 +543,9 @@ public class MessageMapper {
         } else if (value instanceof Integer i) {
             // Ballerina byte arrives boxed as Integer at this native boundary.
             message.setByte(name, i.byteValue());
-        } else if (value instanceof BArray bArray) {
+        } else if (value instanceof BArray bArray
+                && TypeUtils.getReferredType(TypeUtils.getType(bArray)).getTag() != TypeTags.TUPLE_TAG
+                && TypeUtils.getReferredType(bArray.getElementType()).getTag() == TypeTags.BYTE_TAG) {
             message.setBytes(name, bArray.getBytes());
         } else if (value != null) {
             LOGGER.warning(() -> String.format(

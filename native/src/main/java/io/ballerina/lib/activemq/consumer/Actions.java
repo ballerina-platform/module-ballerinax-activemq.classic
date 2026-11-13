@@ -88,6 +88,10 @@ public final class Actions {
     }
 
     public static Object receive(BObject bConsumer, long timeoutMs, BTypedesc bTypedesc) {
+        if (timeoutMs < 0) {
+            return createError(ACTIVEMQ_ERROR,
+                    "Invalid timeout: " + timeoutMs + " ms. The timeout must not be negative");
+        }
         return receiveFrom(bConsumer, bTypedesc, state -> state.consumer.receive(timeoutMs));
     }
 

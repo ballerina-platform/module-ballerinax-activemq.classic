@@ -156,3 +156,18 @@ function testItReceiveNoWaitEmptyQueueReturnsImmediately() returns error? {
     test:assertTrue(elapsedSeconds < 1d,
         "receiveNoWait() should return near-instantly, not block like receive(timeout) does");
 }
+
+@test:Config {
+    groups: ["integration", "queue-consumer"]
+}
+function testItReceiveNegativeTimeoutReturnsError() returns error? {
+    MessageConsumer consumer = check new (brokerUrl,
+        username = username, password = password, destination = {queueName: "it.cons.negative.timeout.queue"});
+    Message|Error? result = consumer->receive(-1000);
+    check consumer->close();
+
+    test:assertTrue(result is Error, "receive() with a negative timeout should return an Error");
+    if result is Error {
+        test:assertEquals(result.message(), "Invalid timeout: -1000 ms. The timeout must not be negative");
+    }
+}

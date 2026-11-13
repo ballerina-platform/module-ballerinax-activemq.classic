@@ -18,12 +18,14 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import jakarta.jms.IllegalStateException;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
 import jakarta.jms.MessageConsumer;
 import jakarta.jms.MessageListener;
 import jakarta.jms.Session;
 
+import java.io.PrintStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -36,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class MessageReceiver implements MessageListener {
     private static final long STOP_TIMEOUT_MS = 30000;
+    private static final PrintStream ERR_OUT = System.err;
 
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -59,14 +62,16 @@ public class MessageReceiver implements MessageListener {
     /**
      * Invoked by the JMS provider when a message is delivered. Dispatches the message to the
      * Ballerina service synchronously on this delivery thread.
+     * <p>
+     * Every delivered message is dispatched, even one that arrives while {@link #stop()} is running.
+     * Returning without dispatching would make the provider treat the message as consumed, so in
+     * {@code AUTO_ACKNOWLEDGE} and {@code DUPS_OK_ACKNOWLEDGE} it would be acknowledged and lost.
+     * {@link #stop()} prevents new deliveries by clearing this listener instead.
      *
      * @param message  the JMS message delivered by the provider
      */
     @Override
     public void onMessage(Message message) {
-        if (closed.get()) {
-            return;
-        }
         this.messageDispatcher.onMessage(message);
     }
 
@@ -81,15 +86,32 @@ public class MessageReceiver implements MessageListener {
     }
 
     /**
-     * Stops the message receiver. Closes the JMS consumer and session on a dedicated thread,
-     * bounded by a 30-second timeout, since closing them from the JMS delivery thread itself
-     * (e.g. from within {@code onMessage}) can deadlock in some providers.
+     * Stops the message receiver.
+     * <p>
+     * First clears this receiver as the consumer's message listener, so the service is given no new
+     * messages. A message the provider has already handed to {@link #onMessage} still completes.
+     * Messages that arrive after the listener is cleared stay unacknowledged in the consumer's buffer.
+     * For a queue or durable subscription, closing the consumer returns them to the broker for
+     * redelivery; a non-durable topic subscription ends with the consumer, so they aren't kept.
+     * <p>
+     * Then closes the JMS consumer and session on a dedicated thread, bounded by a 30-second timeout,
+     * since closing them from the JMS delivery thread itself (e.g. from within {@code onMessage}) can
+     * deadlock in some providers. Closing the consumer waits for a message in progress to complete.
      *
      * @throws Exception if an error occurs during shutdown
      */
     public void stop() throws Exception {
         if (!closed.compareAndSet(false, true)) {
             return;
+        }
+        try {
+            this.consumer.setMessageListener(null);
+        } catch (IllegalStateException e) {
+            // The consumer is already closed, for example because its connection was closed, so nothing
+            // more can be delivered to the service.
+        } catch (JMSException e) {
+            // Closing the consumer below still stops delivery, so this is only reported.
+            ERR_OUT.println("Failed to clear the message listener while stopping: " + e.getMessage());
         }
         Thread closer = new Thread(() -> {
             try {
