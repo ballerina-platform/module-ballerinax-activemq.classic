@@ -56,6 +56,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Enumeration;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_CRON;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.AMQ_SCHEDULED_DELAY;
@@ -105,6 +106,7 @@ public class MessageMapper {
             TypeCreator.createArrayType(PredefinedTypes.TYPE_BYTE));
     private static final MapType BALLERINA_PROPERTY_TYPE = TypeCreator.createMapType(
             "Property", PROPERTY_TYPE, getModule());
+    private static final Pattern XML_DECLARATION = Pattern.compile("<\\?xml\\s");
 
     /** Converts a JMS message to a Ballerina message record shaped by bTypedesc's payload field. */
     public static BMap<BString, Object> toBallerinaMessage(Message message, BTypedesc bTypedesc)
@@ -279,13 +281,20 @@ public class MessageMapper {
                         + "Expected 'string' or 'xml'", payloadType));
     }
 
+    /**
+     * Parses a TextMessage body as XML. A body with an XML declaration is parsed as a document. Anything else is
+     * parsed as a fragment inside a wrapper element, which keeps leading and trailing whitespace as text items
+     * (document parsing drops it). A body that can't be a fragment, such as one with a DOCTYPE, is parsed as a
+     * document.
+     */
     private static BXml parseXmlPayload(String text) {
-        try {
+        if (XML_DECLARATION.matcher(text).lookingAt()) {
             return XmlUtils.parse(text);
-        } catch (BError ignored) {
-            BXml wrappedXml = XmlUtils.parse("<ballerina-xml-sequence>" + text
-                    + "</ballerina-xml-sequence>");
-            return wrappedXml.children();
+        }
+        try {
+            return XmlUtils.parse("<ballerina-xml-sequence>" + text + "</ballerina-xml-sequence>").children();
+        } catch (BError fragmentError) {
+            return XmlUtils.parse(text);
         }
     }
 
