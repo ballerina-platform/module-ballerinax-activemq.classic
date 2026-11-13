@@ -503,13 +503,20 @@ function testItAckDupsOkReturnedErrorIsDeadLettered() returns error? {
 }
 
 // Takes the poison test's dead-lettered message, waiting up to timeoutMs. The connector can't read the
-// ObjectMessage, so receive returns an error for it, but the message is still consumed.
+// ObjectMessage, so receive returns an error for it, but the message is still consumed. Only that error
+// counts as the message arriving; any other receive error is returned so it isn't mistaken for one.
 isolated function takePoisonDeadLetter(int timeoutMs) returns boolean|error {
     MessageConsumer dlqConsumer = check new (brokerUrl, username = username, password = password,
         destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = POISON_DLQ_SELECTOR);
     Message|Error? deadLettered = dlqConsumer->receive(timeoutMs);
     check dlqConsumer->close();
-    return deadLettered !is ();
+    if deadLettered is Error {
+        if deadLettered.message().includes("Forbidden class java.util.ArrayList") {
+            return true;
+        }
+        return deadLettered;
+    }
+    return false;
 }
 
 isolated function drainDeadLetters(string testTag) returns error? {
