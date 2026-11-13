@@ -242,7 +242,7 @@ The runtime type of `payload` determines the JMS message that is created.
 | `map` or record | `MapMessage` |
 | Any other `anydata`, including tuples | `BytesMessage` containing the value as JSON |
 
-A `MapMessage` entry can be a `string`, `int`, `float`, `boolean`, `byte` or `byte[]`. Entries of any other type, including `decimal` values, nested maps and other arrays, are dropped with a logged warning, so the delivered payload may be incomplete.
+A `MapMessage` entry can be a `string`, `int`, `float`, `boolean`, `byte` or `byte[]`. Entries of any other type, including `decimal` values, nested maps and other arrays, are dropped with a logged warning, and `()` entries are dropped without one, so the delivered payload may be incomplete.
 
 To exchange JSON, send `value.toJsonString()` and receive it as a `string`. A `json` object sent directly becomes a `MapMessage`, which drops nested values and can't be received as `json`.
 
@@ -364,7 +364,7 @@ public type ConsumerConfiguration record {|
 | Function | Description |
 |---|---|
 | `attach(Service s, string[]\|string? name = ()) returns Error?` | Validates the service and creates its session and consumer. If the listener has already started, the service starts consuming immediately. `name` is reserved and ignored. |
-| `detach(Service s) returns Error?` | Stops consumption for the service. The service gets no new messages, a message being processed completes, and messages not yet delivered stay on the broker. |
+| `detach(Service s) returns Error?` | Stops consumption for the service. The service gets no new messages, a message being processed completes, and messages not yet delivered stay on the broker for a queue or durable subscription. A non-durable topic subscription ends, so its undelivered messages aren't kept. |
 | `'start() returns Error?` | Starts the connection and consumption for all attached services. |
 | `gracefulStop() returns Error?` | Stops each service's consumption the same way as `detach`, closes its consumer and session, then closes the connection. |
 | `immediateStop() returns Error?` | In this version, behaves the same as `gracefulStop`. |
