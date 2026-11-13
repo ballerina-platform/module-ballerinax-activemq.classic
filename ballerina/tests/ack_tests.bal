@@ -334,6 +334,71 @@ function testItAckSessionTransactedBindingFailureIsDeadLettered() returns error?
         "a message that failed data binding should be moved to ActiveMQ.DLQ, not committed");
 }
 
+isolated int itAckPoisonErrorCount = 0;
+isolated int itAckPoisonGoodCount = 0;
+
+// When a message runs out of redeliveries, ActiveMQ sends the broker a poison ack carrying the failure. The
+// broker must accept it even when the failure came from an ObjectMessage of an untrusted class, so the
+// listener's connection survives and later messages are still delivered.
+@test:Config {
+    groups: ["integration", "ack"]
+}
+function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error? {
+    string queueName = "it.ack.poison.objmsg.queue";
+    check drainQueue(queueName);
+    lock { itAckPoisonErrorCount = 0; }
+    lock { itAckPoisonGoodCount = 0; }
+
+    Listener poisonListener = check new (brokerUrl, username = username, password = password);
+    Service poisonSvc = @ServiceConfig {
+        queueName: "it.ack.poison.objmsg.queue",
+        redeliveryPolicy: {maximumRedeliveries: 1, initialRedeliveryDelay: 200, redeliveryDelay: 200}
+    } service object {
+        remote function onMessage(Message message) returns error? {
+            lock { itAckPoisonGoodCount += 1; }
+        }
+
+        remote function onError(Error err) returns error? {
+            lock { itAckPoisonErrorCount += 1; }
+        }
+    };
+    check poisonListener.attach(poisonSvc, "it-ack-poison-objmsg-svc");
+    check poisonListener.'start();
+
+    check sendObjectMessageToQueue(brokerUrl, queueName, "unreadable-payload");
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckPoisonGoodCount; }
+        lock { errs = itAckPoisonErrorCount; }
+        return [good, errs];
+    }, 0, 2);
+    // Gives the broker time to process the poison ack before the next message is sent.
+    runtime:sleep(1);
+
+    MessageProducer prod = check new (brokerUrl, username = username, password = password);
+    check prod->send({payload: "delivered after the poison ack"}, {queueName});
+    check prod->close();
+
+    waitForCounts(isolated function () returns [int, int] {
+        int good;
+        int errs;
+        lock { good = itAckPoisonGoodCount; }
+        lock { errs = itAckPoisonErrorCount; }
+        return [good, errs];
+    }, 1, 2);
+    check poisonListener.gracefulStop();
+
+    lock {
+        test:assertEquals(itAckPoisonErrorCount, 2,
+            "the unreadable message should fail 1 + maximumRedeliveries times");
+    }
+    lock {
+        test:assertEquals(itAckPoisonGoodCount, 1,
+            "the listener's connection should survive the poison ack and deliver the next message");
+    }
+}
+
 isolated function drainDeadLetters(string testTag) returns error? {
     MessageConsumer drainer = check new (brokerUrl, username = username, password = password,
         destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = string `testTag = '${testTag}'`);

@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the unused, auto-generated `gradle/libs.versions.toml` stub.
 
 ### Fixed
+- Fixed a `Listener` losing its broker connection, and with it every attached service, after an
+  unreadable message such as an `ObjectMessage` of an untrusted class ran out of redeliveries. The
+  failure handed back to ActiveMQ no longer carries a cause chain the broker can't rebuild.
 - Fixed `PrefetchPolicy` being completely non-functional: configuring it at all, even with every
   field set, always crashed with a `NullPointerException` due to 3 of its 4 fields being looked up
   under the wrong native key names.

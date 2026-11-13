@@ -114,10 +114,20 @@ function drainStopLossQueue(string queueName, string idPrefix) returns map<boole
     MessageConsumer consumer = check new (brokerUrl, username = username, password = password,
         destination = {queueName});
     map<boolean> ids = {};
+    int unreadable = 0;
     while true {
-        Message? message = check consumer->receive(2000);
+        Message|Error? message = consumer->receive(2000);
         if message is () {
             break;
+        }
+        if message is Error {
+            // A message this connector can't read, such as an ObjectMessage dead-lettered by another test,
+            // is already consumed by the receive, so it's skipped like any other foreign message.
+            unreadable += 1;
+            if unreadable > 10 {
+                return message;
+            }
+            continue;
         }
         anydata payload = message.payload;
         if payload is byte[] {

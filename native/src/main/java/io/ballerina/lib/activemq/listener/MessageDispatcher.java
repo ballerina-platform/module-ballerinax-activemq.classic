@@ -109,11 +109,18 @@ public class MessageDispatcher {
         }
     }
 
+    /**
+     * Thrown back to ActiveMQ so the message is handed back. It deliberately has no cause: once redeliveries run
+     * out, ActiveMQ sends this exception to the broker in the poison ack, and the broker closes the whole
+     * connection if it can't rebuild a cause, such as the ClassNotFoundException behind an untrusted
+     * ObjectMessage. The failure's description is kept in the message, which the broker records on the
+     * dead-lettered message as dlqDeliveryFailureCause.
+     */
     private static final class ActiveMQMessageProcessingException extends RuntimeException {
         private static final long serialVersionUID = 1L;
 
-        ActiveMQMessageProcessingException(Throwable cause) {
-            super(cause);
+        ActiveMQMessageProcessingException(Throwable failure) {
+            super(String.valueOf(failure));
         }
     }
 
