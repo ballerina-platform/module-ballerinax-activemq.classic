@@ -337,6 +337,11 @@ function testItAckSessionTransactedBindingFailureIsDeadLettered() returns error?
 isolated int itAckPoisonErrorCount = 0;
 isolated int itAckPoisonGoodCount = 0;
 
+// ActiveMQ records the failure, including the consumer's redelivery policy, on a dead-lettered message as
+// dlqDeliveryFailureCause. Matching both the policy and the class picks out this test's poison message.
+const string POISON_DLQ_SELECTOR =
+    "dlqDeliveryFailureCause LIKE '%maximumRedeliveries = 1,%Forbidden class java.util.ArrayList%'";
+
 // When a message runs out of redeliveries, ActiveMQ sends the broker a poison ack carrying the failure. The
 // broker must accept it even when the failure came from an ObjectMessage of an untrusted class, so the
 // listener's connection survives and later messages are still delivered.
@@ -346,6 +351,8 @@ isolated int itAckPoisonGoodCount = 0;
 function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error? {
     string queueName = "it.ack.poison.objmsg.queue";
     check drainQueue(queueName);
+    while check takePoisonDeadLetter(500) {
+    }
     lock { itAckPoisonErrorCount = 0; }
     lock { itAckPoisonGoodCount = 0; }
 
@@ -373,8 +380,9 @@ function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error
         lock { errs = itAckPoisonErrorCount; }
         return [good, errs];
     }, 0, 2);
-    // Gives the broker time to process the poison ack before the next message is sent.
-    runtime:sleep(1);
+    // The message reaches the DLQ only once the broker has processed the poison ack.
+    test:assertTrue(check takePoisonDeadLetter(10000),
+        "the unreadable message should be moved to ActiveMQ.DLQ once its redeliveries run out");
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
     check prod->send({payload: "delivered after the poison ack"}, {queueName});
@@ -492,6 +500,16 @@ function testItAckDupsOkReturnedErrorIsDeadLettered() returns error? {
     }
     test:assertTrue(check isDeadLettered(testTag, 10000),
         "a message whose onMessage keeps returning an error should be moved to ActiveMQ.DLQ, not acknowledged");
+}
+
+// Takes the poison test's dead-lettered message, waiting up to timeoutMs. The connector can't read the
+// ObjectMessage, so receive returns an error for it, but the message is still consumed.
+isolated function takePoisonDeadLetter(int timeoutMs) returns boolean|error {
+    MessageConsumer dlqConsumer = check new (brokerUrl, username = username, password = password,
+        destination = {queueName: "ActiveMQ.DLQ"}, messageSelector = POISON_DLQ_SELECTOR);
+    Message|Error? deadLettered = dlqConsumer->receive(timeoutMs);
+    check dlqConsumer->close();
+    return deadLettered !is ();
 }
 
 isolated function drainDeadLetters(string testTag) returns error? {
