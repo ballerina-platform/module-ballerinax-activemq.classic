@@ -92,7 +92,9 @@ public class MessageDispatcher {
                 onError(bError);
                 if (autoAcknowledged) {
                     // JMS acknowledges once this method returns normally, which would lose the message.
-                    // Throwing makes ActiveMQ redeliver it and dead-letter it after maximumRedeliveries.
+                    // Throwing makes ActiveMQ redeliver it and dead-letter it after maximumRedeliveries,
+                    // except on a topic in DUPS_OK_ACKNOWLEDGE, where ActiveMQ doesn't track delivered
+                    // messages and so doesn't redeliver it.
                     throw new ActiveMQMessageProcessingException(bError);
                 }
             }
