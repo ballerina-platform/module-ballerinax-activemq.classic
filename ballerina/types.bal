@@ -213,8 +213,9 @@ public type CertKey record {|
 # + scheduledRepeat - Number of additional deliveries after the first. Use `-1` for
 #                    infinite repetition. Use together with `scheduledPeriod`.
 # + scheduledCron - Cron expression controlling the delivery schedule, in the five-field Unix
-#                  format (for example, `"0 12 * * *"` for every day at 12:00). Takes priority
-#                  over `scheduledDelay`. If `scheduledPeriod` and `scheduledRepeat` are also set,
+#                  format (for example, `"0 12 * * *"` for every day at 12:00). If `scheduledDelay`
+#                  is also set, delivery starts that many milliseconds after each cron time.
+#                  If `scheduledPeriod` and `scheduledRepeat` are also set,
 #                  the repeated deliveries run each time the cron expression fires. Requires the
 #                  broker scheduler to be enabled.
 public type Message record {|

@@ -295,7 +295,7 @@ These fields map to the ActiveMQ scheduler properties. The broker must be config
 | `scheduledDelay` | `AMQ_SCHEDULED_DELAY` | Delay in milliseconds before first delivery. |
 | `scheduledPeriod` | `AMQ_SCHEDULED_PERIOD` | Period in milliseconds between repeated deliveries. |
 | `scheduledRepeat` | `AMQ_SCHEDULED_REPEAT` | Additional deliveries after the first. `-1` repeats indefinitely. Use together with `scheduledPeriod`. |
-| `scheduledCron` | `AMQ_SCHEDULED_CRON` | Cron expression for the schedule, in the five-field Unix format, such as `0 12 * * *`. Takes priority over `scheduledDelay`. If `scheduledPeriod` and `scheduledRepeat` are also set, the repeated deliveries run each time the cron expression fires. |
+| `scheduledCron` | `AMQ_SCHEDULED_CRON` | Cron expression for the schedule, in the five-field Unix format, such as `0 12 * * *`. If `scheduledDelay` is also set, delivery starts that many milliseconds after each cron time. If `scheduledPeriod` and `scheduledRepeat` are also set, the repeated deliveries run each time the cron expression fires. |
 
 ## 5. Message Producer
 
