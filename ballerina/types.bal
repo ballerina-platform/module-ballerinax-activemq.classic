@@ -273,7 +273,9 @@ public enum AcknowledgementMode {
     # Indicates that the session lazily acknowledges the delivery of messages. This is likely to
     # result in the delivery of some duplicate messages if the JMS provider fails, so it should
     # only be used by consumers that can tolerate duplicate messages. Use of this mode can reduce
-    # session overhead by minimizing the work the session does to prevent duplicates.
+    # session overhead by minimizing the work the session does to prevent duplicates. On a topic,
+    # ActiveMQ doesn't redeliver a message that fails in a `Listener` service, so use
+    # `AUTO_ACKNOWLEDGE` for a topic service that needs redelivery.
     DUPS_OK_ACKNOWLEDGE
 }
 

@@ -164,8 +164,9 @@ for the full set of supported combinations. A payload that can't be converted to
 type is reported to `onError` (if defined) and the message is redelivered. Once the redelivery
 policy is exhausted, the broker dead-letters it: by default, a persistent message goes to
 `ActiveMQ.DLQ` and a non-persistent message is discarded. In the default `AUTO_ACKNOWLEDGE` mode,
-and in `DUPS_OK_ACKNOWLEDGE`, a message whose `onMessage` returns an error is redelivered the same
-way.
+and in `DUPS_OK_ACKNOWLEDGE` on a queue, a message whose `onMessage` returns an error is redelivered
+the same way. On a topic in `DUPS_OK_ACKNOWLEDGE` mode, ActiveMQ doesn't redeliver failed messages,
+so use `AUTO_ACKNOWLEDGE` for a topic service that needs redelivery.
 
 ### 6. Publish to a topic
 

@@ -431,13 +431,13 @@ Each service has its own session and receives messages one at a time, in order. 
 | Situation | Effect on the message | Notification |
 |---|---|---|
 | `onMessage` returns normally | Handled according to the acknowledgement mode. | None. |
-| `onMessage` returns an error | In `AUTO_ACKNOWLEDGE` and `DUPS_OK_ACKNOWLEDGE` modes, handed back for redelivery and dead-lettered once the redelivery policy is exhausted. In `CLIENT_ACKNOWLEDGE` and `SESSION_TRANSACTED` modes, left for the service to settle through the `Caller`. | `onError` is called on every attempt. |
+| `onMessage` returns an error | In `AUTO_ACKNOWLEDGE` mode, and in `DUPS_OK_ACKNOWLEDGE` mode on a queue, handed back for redelivery and dead-lettered once the redelivery policy is exhausted. On a topic in `DUPS_OK_ACKNOWLEDGE` mode, not redelivered. In `CLIENT_ACKNOWLEDGE` and `SESSION_TRANSACTED` modes, left for the service to settle through the `Caller`. | `onError` is called on every attempt. |
 | `onMessage` panics | Not rolled back or redelivered by the connector. | Printed to standard error. |
-| The payload can't be bound to the declared type | Handed back for redelivery in every acknowledgement mode. Once the redelivery policy is exhausted, it's handled by the broker's dead-letter policy, as described in [Redelivery Policy](#25-redelivery-policy). | `onError` is called on every attempt. |
+| The payload can't be bound to the declared type | Handed back for redelivery in every acknowledgement mode, except on a topic in `DUPS_OK_ACKNOWLEDGE` mode, where it isn't redelivered. Once the redelivery policy is exhausted, it's handled by the broker's dead-letter policy, as described in [Redelivery Policy](#25-redelivery-policy). | `onError` is called on every attempt. |
 
 In `SESSION_TRANSACTED` mode, call `caller->'rollback()` to retry after a business failure.
 
-Handing back a message works as follows. After a binding failure, `SESSION_TRANSACTED` rolls back the transaction and `CLIENT_ACKNOWLEDGE` recovers the session, so other uncommitted or unacknowledged messages in the session are also redelivered. In `AUTO_ACKNOWLEDGE` and `DUPS_OK_ACKNOWLEDGE` modes, the ActiveMQ client performs the redelivery. By default, later messages for that service wait while a redelivery delay is pending; the ActiveMQ `nonBlockingRedelivery` connection property, set through `properties`, changes this.
+Handing back a message works as follows. After a binding failure, `SESSION_TRANSACTED` rolls back the transaction and `CLIENT_ACKNOWLEDGE` recovers the session, so other uncommitted or unacknowledged messages in the session are also redelivered. In `AUTO_ACKNOWLEDGE` and `DUPS_OK_ACKNOWLEDGE` modes, the ActiveMQ client performs the redelivery. On a topic in `DUPS_OK_ACKNOWLEDGE` mode, the ActiveMQ client doesn't track delivered messages, so a message that is handed back isn't redelivered or dead-lettered; use `AUTO_ACKNOWLEDGE` for a topic service that needs redelivery. By default, later messages for that service wait while a redelivery delay is pending; the ActiveMQ `nonBlockingRedelivery` connection property, set through `properties`, changes this.
 
 If the service has no `onError` method, the error is printed to standard error. If `onError` returns an error, it is printed. If `onError` panics, consumption for that service stops.
 
@@ -447,7 +447,7 @@ If the service has no `onError` method, the error is printed to standard error. 
 |---|---|
 | `AUTO_ACKNOWLEDGE` | The session acknowledges each message automatically when `receive` returns or `onMessage` returns normally. If `onMessage` returns an error, the message is redelivered instead. |
 | `CLIENT_ACKNOWLEDGE` | The application calls `acknowledge`. Acknowledging a message also acknowledges every earlier message received by the session. |
-| `DUPS_OK_ACKNOWLEDGE` | The session acknowledges lazily, which can deliver duplicates after a failure. As with `AUTO_ACKNOWLEDGE`, a message whose `onMessage` returns an error is redelivered. |
+| `DUPS_OK_ACKNOWLEDGE` | The session acknowledges lazily, which can deliver duplicates after a failure. As with `AUTO_ACKNOWLEDGE`, a message whose `onMessage` returns an error is redelivered, except on a topic, where ActiveMQ doesn't redeliver it. |
 | `SESSION_TRANSACTED` | Messages are grouped into a local transaction that the application ends with `commit` or `rollback`. |
 
 ## 9. Errors
