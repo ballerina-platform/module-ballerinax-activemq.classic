@@ -18,10 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropped.
 
 ### Changed
+- A `MessageProducer` created with `transacted: true` now takes part in Ballerina `transaction`
+  blocks: its sends are delivered when the block commits and discarded when the block rolls back
+  or fails. `send()` returns an error if a transacted producer sends outside a `transaction`
+  block, if a producer that isn't transacted sends inside one, or if the producer is already part
+  of another transaction running at the same time.
 - Moved the test-only `TestProducer` native helper out of the released `activemq.classic-native` jar into a
   separate `testOnly`-scoped jar, so test utilities no longer ship in the production artifact.
 
 ### Removed
+- Removed `MessageProducer.'commit()` and `MessageProducer.'rollback()`. A transacted producer
+  commits and rolls back with the surrounding `transaction` block instead.
 - Removed the unused, auto-generated `gradle/libs.versions.toml` stub.
 
 ### Fixed

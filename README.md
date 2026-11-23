@@ -172,20 +172,29 @@ check producer->send({
 
 ### 7. Transactional sends
 
-Configure the producer with `transacted: true`, then group multiple sends into a single
-atomic operation:
+Configure the producer with `transacted: true`, then send inside a Ballerina `transaction`
+block. The sends are delivered together when the block commits:
 
 ```ballerina
 classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
-check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
-check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
-check producer->'commit();   // both messages are delivered together
+transaction {
+    check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
+    check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+    check commit;   // both messages are delivered together
+}
 check producer->close();
 ```
 
-Call `'rollback()` (or simply `close()` without committing) to discard all buffered
-messages. `'commit()`/`'rollback()` return a `classic:Error` if the producer wasn't
-configured with `transacted: true`.
+If the block rolls back, or fails with an error, the sends are discarded. Several transacted
+producers in the same block roll back together, and `retry transaction` resends only the
+attempt that commits. The producer's session isn't an XA resource, so the commit isn't atomic
+with other resources, such as a database, in the same block.
+
+`send()` returns a `classic:Error` if:
+- a transacted producer sends outside a `transaction` block;
+- a producer that isn't transacted sends inside one;
+- the producer is already part of another transaction running at the same time. Use a
+  separate producer for each transaction that runs concurrently.
 
 ### 8. SSL / TLS connection
 

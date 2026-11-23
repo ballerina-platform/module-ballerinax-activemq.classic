@@ -80,8 +80,9 @@ public type ConnectionConfiguration record {
 
 # Configuration for an ActiveMQ message producer.
 #
-# + transacted - Enables transacted messaging. Messages are sent within a transaction context,
-#                requiring an explicit commit or rollback
+# + transacted - Makes the producer's sends part of the surrounding Ballerina `transaction`
+#                block. Sends must then be made inside a `transaction` block; they are delivered
+#                when the block commits and discarded when it rolls back
 # + destination - The default destination (queue or topic) to publish to. Can be omitted and/or
 #                 overridden per call via the `destination` parameter of `MessageProducer.send()`
 public type ProducerConfiguration record {|
