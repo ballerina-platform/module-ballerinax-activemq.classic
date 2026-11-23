@@ -20,6 +20,7 @@ package io.ballerina.lib.activemq.listener;
 
 import io.ballerina.lib.activemq.util.ActiveMQDatabindingException;
 import io.ballerina.lib.activemq.util.MessageMapper;
+import io.ballerina.lib.activemq.util.SessionTransactionContext;
 import io.ballerina.runtime.api.Runtime;
 import io.ballerina.runtime.api.concurrent.StrandMetadata;
 import io.ballerina.runtime.api.creators.ValueCreator;
@@ -39,6 +40,7 @@ import java.io.PrintStream;
 import java.util.Optional;
 
 import static io.ballerina.lib.activemq.listener.Caller.NATIVE_SESSION;
+import static io.ballerina.lib.activemq.listener.Caller.NATIVE_TRANSACTION_CONTEXT;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.BCALLER_NAME;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_ERROR_METHOD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_MESSAGE_METHOD;
@@ -52,6 +54,9 @@ public class MessageDispatcher {
     private final Runtime ballerinaRuntime;
     private final Service nativeService;
     private final Session session;
+    // Shared by every caller of this service, so the service's session joins at most one transaction at a time.
+    // Non-null only for a transacted session.
+    private final SessionTransactionContext transactionContext;
     private final OnErrorCallback onErrorCallback = new OnErrorCallback();
 
     /**
@@ -60,11 +65,14 @@ public class MessageDispatcher {
      * @param ballerinaRuntime  the Ballerina runtime for invoking service methods
      * @param nativeService     the wrapped Ballerina service
      * @param session           the JMS session for creating caller objects
+     * @param transacted        whether the session is transacted
      */
-    MessageDispatcher(Runtime ballerinaRuntime, Service nativeService, Session session) {
+    MessageDispatcher(Runtime ballerinaRuntime, Service nativeService, Session session, boolean transacted) {
         this.ballerinaRuntime = ballerinaRuntime;
         this.nativeService = nativeService;
         this.session = session;
+        this.transactionContext = transacted
+                ? new SessionTransactionContext(session, new Object(), "service's session") : null;
     }
 
     /** Associates this dispatcher with its MessageReceiver, so a failing onError handler can stop delivery. */
@@ -154,6 +162,9 @@ public class MessageDispatcher {
     private BObject getCaller() {
         BObject caller = ValueCreator.createObjectValue(getModule(), BCALLER_NAME);
         caller.addNativeData(NATIVE_SESSION, session);
+        if (transactionContext != null) {
+            caller.addNativeData(NATIVE_TRANSACTION_CONTEXT, transactionContext);
+        }
         return caller;
     }
 

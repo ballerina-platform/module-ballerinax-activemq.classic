@@ -21,6 +21,7 @@ package io.ballerina.lib.activemq.producer;
 import io.ballerina.lib.activemq.util.ConnectionFactoryUtils;
 import io.ballerina.lib.activemq.util.MessageMapper;
 import io.ballerina.lib.activemq.util.SessionResourceUtils;
+import io.ballerina.lib.activemq.util.SessionTransactionContext;
 import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
@@ -52,7 +53,7 @@ public final class Actions {
         final BMap<BString, Object> defaultDestination;
         final Object sessionLock = new Object();
         // Non-null only for a transacted producer.
-        final ProducerTransactionContext transactionContext;
+        final SessionTransactionContext transactionContext;
         volatile boolean closed = false;
 
         ProducerState(Connection connection, Session session, MessageProducer producer, boolean transacted,
@@ -62,7 +63,7 @@ public final class Actions {
             this.producer = producer;
             this.defaultDestination = defaultDestination;
             this.transactionContext = transacted
-                    ? new ProducerTransactionContext(session, sessionLock) : null;
+                    ? new SessionTransactionContext(session, sessionLock, "producer") : null;
         }
     }
 
@@ -120,7 +121,7 @@ public final class Actions {
      */
     private static BError joinTransactionIfAny(ProducerState state) {
         boolean inTransaction = TransactionResourceManager.getInstance().isInTransaction();
-        ProducerTransactionContext transactionContext = state.transactionContext;
+        SessionTransactionContext transactionContext = state.transactionContext;
         if (transactionContext == null) {
             return inTransaction
                     ? createError(ACTIVEMQ_ERROR, "Cannot send inside a transaction block: the producer isn't "

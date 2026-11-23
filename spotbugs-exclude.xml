@@ -39,6 +39,11 @@
         <Field name="messageDispatcher"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
+    <Match>
+        <Class name="io.ballerina.lib.activemq.util.SessionTransactionContext"/>
+        <Field name="session"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
 
     <!-- ConnectionConfig intentionally exposes its record values. -->
     <Match>

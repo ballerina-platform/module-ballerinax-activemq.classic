@@ -196,6 +196,29 @@ with other resources, such as a database, in the same block.
 - the producer is already part of another transaction running at the same time. Use a
   separate producer for each transaction that runs concurrently.
 
+A `Listener` service with `sessionAckMode: SESSION_TRANSACTED` can take part in the same block.
+Calling `caller->acknowledge(message)` inside the block joins the service's session to it:
+
+```ballerina
+remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
+    transaction {
+        check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
+        check caller->acknowledge(message);
+        check commit;   // the message is acknowledged and the result is sent together
+    }
+}
+```
+
+When the block commits, every message the service's session has received since its last commit
+or rollback is acknowledged, not just the one passed to `acknowledge()`. When the block rolls back
+or fails, those messages are redelivered under the redelivery policy. Outside a block,
+`caller->'commit()` and `caller->'rollback()` work as before.
+
+`caller->acknowledge()` returns a `classic:Error` inside a `transaction` block if the service's
+session isn't transacted, because that acknowledgement couldn't be rolled back with the block.
+`caller->'commit()` and `caller->'rollback()` return a `classic:Error` while the session is part
+of a block, because the block's own commit or rollback settles it.
+
 ### 8. SSL / TLS connection
 
 Pass a `secureSocket` block to connect over `ssl://`:

@@ -16,7 +16,7 @@
  * under the License.
  */
 
-package io.ballerina.lib.activemq.producer;
+package io.ballerina.lib.activemq.util;
 
 import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.transactions.BallerinaTransactionContext;
@@ -33,33 +33,42 @@ import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 
 /**
- * Lets a transacted producer take part in a Ballerina {@code transaction} block.
+ * Lets a transacted JMS session take part in a Ballerina {@code transaction} block.
  * <p>
- * The first {@code send} inside a block registers this context with the current transaction. When the block
- * commits or rolls back, the Ballerina runtime calls {@link #commit()} or {@link #rollback()}, which commit or
- * roll back the producer's transacted JMS session. The session isn't an XA resource, so the commit isn't atomic
- * with other resources in the same block.
+ * Used by transacted producers, pull consumers and listener services. The first call inside a block that joins
+ * the session (a producer's {@code send}, or a consumer's or caller's {@code acknowledge}) registers this context
+ * with the current transaction. When the block commits or rolls back, the Ballerina runtime calls
+ * {@link #commit()} or {@link #rollback()}, which commit or roll back the session. A JMS commit or rollback covers
+ * everything the session has sent or received since its last commit or rollback. The session isn't an XA
+ * resource, so the commit isn't atomic with other resources in the same block.
  */
-final class ProducerTransactionContext implements BallerinaTransactionContext {
+public final class SessionTransactionContext implements BallerinaTransactionContext {
 
     private final String connectorId = UUID.randomUUID().toString();
     private final Session session;
     private final Object sessionLock;
-    // The transaction this producer currently belongs to, or null. Guarded by this.
+    private final String resourceName;
+    // The transaction the session currently belongs to, or null. Guarded by this.
     private String activeTransactionId;
 
-    ProducerTransactionContext(Session session, Object sessionLock) {
+    /**
+     * @param session      the transacted JMS session
+     * @param sessionLock  the lock that guards the session against concurrent use
+     * @param resourceName the resource that owns the session, used in error messages, e.g. {@code "producer"}
+     */
+    public SessionTransactionContext(Session session, Object sessionLock, String resourceName) {
         this.session = session;
         this.sessionLock = sessionLock;
+        this.resourceName = resourceName;
     }
 
     /**
      * Registers this context with the caller's current transaction, if it isn't registered yet. Must be called on
      * the calling strand, inside a transaction.
      *
-     * @return a {@code BError} if the producer already belongs to a different open transaction, or null
+     * @return a {@code BError} if the session already belongs to a different open transaction, or null
      */
-    BError joinCurrentTransaction() {
+    public BError joinCurrentTransaction() {
         TransactionResourceManager manager = TransactionResourceManager.getInstance();
         TransactionLocalContext localContext = manager.getCurrentTransactionContext();
         String globalId = localContext.getGlobalTransactionId();
@@ -67,8 +76,9 @@ final class ProducerTransactionContext implements BallerinaTransactionContext {
         String transactionId = globalId + ":" + blockId;
         synchronized (this) {
             if (activeTransactionId != null && !activeTransactionId.equals(transactionId)) {
-                return createError(ACTIVEMQ_ERROR, "The producer is already part of another transaction. "
-                        + "Use a separate producer for each transaction that runs at the same time.");
+                return createError(ACTIVEMQ_ERROR, "The " + resourceName + " is already part of another "
+                        + "transaction. Use a separate " + resourceName + " for each transaction that runs at the "
+                        + "same time.");
             }
             if (localContext.getTransactionContext(connectorId) == null) {
                 localContext.registerTransactionContext(connectorId, this);
@@ -77,6 +87,21 @@ final class ProducerTransactionContext implements BallerinaTransactionContext {
             }
         }
         return null;
+    }
+
+    /**
+     * Rejects an explicit commit or rollback while the session belongs to an open transaction block, because the
+     * block's own commit or rollback settles the session.
+     *
+     * @param operation the explicit operation, {@code "commit"} or {@code "roll back"}
+     * @return a {@code BError} if the session belongs to an open transaction, or null
+     */
+    public synchronized BError checkExplicitSettlementAllowed(String operation) {
+        if (activeTransactionId == null) {
+            return null;
+        }
+        return createError(ACTIVEMQ_ERROR, "Cannot " + operation + " explicitly while the " + resourceName
+                + " is part of a transaction block. The block's commit or rollback settles it.");
     }
 
     @Override

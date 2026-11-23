@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or fails. `send()` returns an error if a transacted producer sends outside a `transaction`
   block, if a producer that isn't transacted sends inside one, or if the producer is already part
   of another transaction running at the same time.
+- A `Listener` service with `sessionAckMode: SESSION_TRANSACTED` can now take part in Ballerina
+  `transaction` blocks: calling `caller->acknowledge()` inside a block joins the service's session
+  to it, so the block's commit acknowledges the session's received messages and its rollback has
+  them redelivered. Outside a block, `caller->'commit()` and `caller->'rollback()` work as before.
+  `caller->acknowledge()` returns an error inside a block if the session isn't transacted, and
+  `caller->'commit()`/`caller->'rollback()` return an error while the session is part of a block.
 - Moved the test-only `TestProducer` native helper out of the released `activemq.classic-native` jar into a
   separate `testOnly`-scoped jar, so test utilities no longer ship in the production artifact.
 
