@@ -34,7 +34,9 @@ public isolated client class Caller {
     # Inside a Ballerina `transaction` block, a service with `sessionAckMode: SESSION_TRANSACTED`
     # joins the block instead. When the block commits, every message the service's session has
     # received since its last commit or rollback is acknowledged, together with the block's other
-    # work. When it rolls back, those messages are redelivered under the redelivery policy.
+    # work. When it rolls back, those messages are redelivered under the redelivery policy. This
+    # includes earlier messages that a previous `onMessage` call left unsettled: a JMS transaction
+    # belongs to the session, not to the block.
     #
     # ```ballerina
     # remote function onMessage(classic:Message message, classic:Caller caller) returns error? {

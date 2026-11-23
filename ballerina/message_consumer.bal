@@ -97,7 +97,9 @@ public isolated client class MessageConsumer {
     # Inside a Ballerina `transaction` block, a consumer with `ackMode: SESSION_TRANSACTED` joins
     # the block instead. When the block commits, every message the consumer's session has received
     # since its last commit or rollback is acknowledged, together with the block's other work. When
-    # it rolls back, those messages are redelivered under the redelivery policy.
+    # it rolls back, those messages are redelivered under the redelivery policy. This includes
+    # messages received before the block, and receiving inside the block doesn't start a separate
+    # transaction: a JMS transaction belongs to the session, not to the block.
     #
     # ```ballerina
     # transaction {

@@ -210,8 +210,9 @@ remote function onMessage(classic:Message message, classic:Caller caller) return
 ```
 
 When the block commits, every message the service's session has received since its last commit
-or rollback is acknowledged, not just the one passed to `acknowledge()`. When the block rolls back
-or fails, those messages are redelivered under the redelivery policy. Outside a block,
+or rollback is acknowledged, not just the one passed to `acknowledge()`. That includes earlier
+messages that a previous `onMessage` call left unsettled. When the block rolls back or fails,
+those messages are redelivered under the redelivery policy. Outside a block,
 `caller->'commit()` and `caller->'rollback()` work as before.
 
 `caller->acknowledge()` returns a `classic:Error` inside a `transaction` block if the service's
@@ -235,10 +236,28 @@ transaction {
 }
 ```
 
-The same rules apply: the block's commit acknowledges every message the consumer's session has
-received since its last commit or rollback, `consumer->acknowledge()` returns an error inside a
-block if the consumer isn't transacted, and `consumer->'commit()`/`consumer->'rollback()` return
-an error while the consumer is part of a block. Outside a block, they work as before.
+The same rules apply: `consumer->acknowledge()` returns an error inside a block if the consumer
+isn't transacted, and `consumer->'commit()`/`consumer->'rollback()` return an error while the
+consumer is part of a block. Outside a block, they work as before.
+
+A JMS transaction belongs to the session, not to the block, so the block covers every message the
+session has received since its last commit or rollback:
+- A message received *before* the block is acknowledged when the block commits, and redelivered
+  when it rolls back, once the consumer has joined the block:
+
+  ```ballerina
+  classic:Message? message = check consumer->receive(5000);
+  if message is classic:Message {
+      transaction {
+          check consumer->acknowledge(message);   // also covers anything else received earlier
+          check commit;
+      }
+  }
+  ```
+- Receiving another message inside the block doesn't start a separate transaction: it joins the
+  same session transaction as the messages received before it.
+- On a consumer that isn't transacted, `receive()` inside a block isn't part of the block. Its
+  messages are acknowledged as usual for its `ackMode`, whether or not the block commits.
 
 ### 8. SSL / TLS connection
 

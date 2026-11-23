@@ -14,6 +14,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/lang.runtime;
 import ballerina/test;
 
 // Tests for pull consumers whose acknowledgements take part in Ballerina `transaction` blocks.
@@ -257,4 +258,62 @@ function testConsumerExplicitCommitInsideBlockReturnsError() returns error? {
     test:assertTrue(explicitRollback.message().includes("Cannot roll back explicitly"),
             "unexpected error message: " + explicitRollback.message());
     test:assertEquals(check receiveTexts(queueName), [], "the block's commit should still acknowledge it");
+}
+
+// Receives and acknowledges one message in its own transaction, holding it open for `holdSeconds`.
+function acknowledgeInSlowTransaction(MessageConsumer consumer, decimal holdSeconds) returns error? {
+    transaction {
+        TextMessage? msg = check consumer->receive(5000);
+        if msg is TextMessage {
+            check consumer->acknowledge(msg);
+        }
+        runtime:sleep(holdSeconds);
+        check commit;
+    }
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerSharedByConcurrentTransactionsReturnsError() returns error? {
+    string queueName = "tx.consumer.shared.queue";
+    check drainQueue(queueName);
+    check sendToQueue(BROKER_URL, queueName, "first");
+    check sendToQueue(BROKER_URL, queueName, "second");
+    MessageConsumer consumer = check newTransactedConsumer(queueName);
+
+    future<error?> slow = start acknowledgeInSlowTransaction(consumer, 3);
+    runtime:sleep(1);
+    Error? secondResult = ();
+    transaction {
+        TextMessage? msg = check consumer->receive(5000);
+        if msg is TextMessage {
+            secondResult = consumer->acknowledge(msg);
+        }
+        check commit;
+    }
+    check wait slow;
+
+    // Once the first transaction has ended, the same consumer must join a later one normally.
+    check sendToQueue(BROKER_URL, queueName, "third");
+    TextMessage? later = ();
+    transaction {
+        later = check consumer->receive(5000);
+        if later is TextMessage {
+            check consumer->acknowledge(later);
+        }
+        check commit;
+    }
+    check consumer->close();
+
+    if secondResult is () {
+        test:assertFail("a consumer already in one transaction must not join another one at the same time");
+    }
+    test:assertTrue(secondResult.message().includes("already part of another transaction"),
+            "unexpected error message: " + secondResult.message());
+    if later is () {
+        test:assertFail("the consumer should receive in a later transaction");
+    }
+    test:assertEquals(later.payload, "third");
+    test:assertEquals(check receiveTexts(queueName), [], "the later transaction should acknowledge its message");
 }
