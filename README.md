@@ -219,6 +219,27 @@ session isn't transacted, because that acknowledgement couldn't be rolled back w
 `caller->'commit()` and `caller->'rollback()` return a `classic:Error` while the session is part
 of a block, because the block's own commit or rollback settles it.
 
+A `MessageConsumer` created with `ackMode: SESSION_TRANSACTED` works the same way: calling
+`consumer->acknowledge(message)` inside a block joins the consumer's session to it.
+
+```ballerina
+classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
+    ackMode = classic:SESSION_TRANSACTED, destination = {queueName: "orders.queue"});
+transaction {
+    classic:Message? message = check consumer->receive(5000);
+    if message is classic:Message {
+        check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
+        check consumer->acknowledge(message);
+    }
+    check commit;   // the message is acknowledged and the result is sent together
+}
+```
+
+The same rules apply: the block's commit acknowledges every message the consumer's session has
+received since its last commit or rollback, `consumer->acknowledge()` returns an error inside a
+block if the consumer isn't transacted, and `consumer->'commit()`/`consumer->'rollback()` return
+an error while the consumer is part of a block. Outside a block, they work as before.
+
 ### 8. SSL / TLS connection
 
 Pass a `secureSocket` block to connect over `ssl://`:

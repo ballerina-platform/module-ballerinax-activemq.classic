@@ -14,8 +14,8 @@ integrations that leverage ActiveMQ's messaging capabilities within Ballerina ap
 
 - Point-to-point (queue) and publish/subscribe (topic) messaging, including durable topic subscriptions
 - Both synchronous (pull-based `MessageConsumer`) and asynchronous (push-based `Listener`) consumption
-- Transacted producers and `Listener` services that take part in Ballerina `transaction`
-  blocks, and transacted sessions with `commit`/`rollback` on the consumer side
+- Transacted producers, pull consumers and `Listener` services that take part in Ballerina
+  `transaction` blocks, and explicit `commit`/`rollback` on the consumer side outside a block
 - Typed payload data binding on `receive`/`receiveNoWait` and on a `Listener` service's `onMessage`
 - Secure communication over TLS/SSL
 - Message selectors, redelivery and prefetch policy tuning, and scheduled message delivery

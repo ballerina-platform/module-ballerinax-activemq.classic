@@ -83,9 +83,9 @@ public isolated client class MessageConsumer {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
     } external;
 
-    # Acknowledges a received message. Only meaningful when the consumer is configured with
-    # `ackMode: CLIENT_ACKNOWLEDGE`. Acknowledging one message acknowledges all messages received
-    # by this consumer's session up to and including it.
+    # Acknowledges a received message. Outside a `transaction` block, this is only meaningful when
+    # the consumer is configured with `ackMode: CLIENT_ACKNOWLEDGE`. Acknowledging one message
+    # acknowledges all messages received by this consumer's session up to and including it.
     #
     # ```ballerina
     # classic:Message? msg = check consumer->receive(5000);
@@ -94,32 +94,54 @@ public isolated client class MessageConsumer {
     # }
     # ```
     #
+    # Inside a Ballerina `transaction` block, a consumer with `ackMode: SESSION_TRANSACTED` joins
+    # the block instead. When the block commits, every message the consumer's session has received
+    # since its last commit or rollback is acknowledged, together with the block's other work. When
+    # it rolls back, those messages are redelivered under the redelivery policy.
+    #
+    # ```ballerina
+    # transaction {
+    #     classic:Message? msg = check consumer->receive(5000);
+    #     if msg is classic:Message {
+    #         check consumer->acknowledge(msg);
+    #     }
+    #     check commit;
+    # }
+    # ```
+    #
     # + message - The message to acknowledge
-    # + return - `classic:Error` if acknowledgement fails, `()` otherwise
+    # + return - `classic:Error` if acknowledgement fails, if a consumer that isn't transacted
+    #            acknowledges inside a `transaction` block, or if the consumer is already part of
+    #            another transaction; `()` otherwise
     isolated remote function acknowledge(Message message) returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
     } external;
 
     # Commits all messages received since the last commit or rollback. Only valid when the
-    # consumer is configured with `ackMode: SESSION_TRANSACTED`.
+    # consumer is configured with `ackMode: SESSION_TRANSACTED`. Not allowed while the consumer is
+    # part of a `transaction` block; the block's own commit settles it.
     #
     # ```ballerina
     # check consumer->'commit();
     # ```
     #
-    # + return - `classic:Error` if the commit fails, `()` otherwise
+    # + return - `classic:Error` if the commit fails or the consumer is part of a `transaction`
+    #            block, `()` otherwise
     isolated remote function 'commit() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
     } external;
 
     # Rolls back all messages received since the last commit, making them available for
     # redelivery. Only valid when the consumer is configured with `ackMode: SESSION_TRANSACTED`.
+    # Not allowed while the consumer is part of a `transaction` block; the block's own rollback
+    # settles it.
     #
     # ```ballerina
     # check consumer->'rollback();
     # ```
     #
-    # + return - `classic:Error` if the rollback fails, `()` otherwise
+    # + return - `classic:Error` if the rollback fails or the consumer is part of a
+    #            `transaction` block, `()` otherwise
     isolated remote function 'rollback() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
     } external;
