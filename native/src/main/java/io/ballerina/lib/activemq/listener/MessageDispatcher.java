@@ -31,7 +31,9 @@ import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.utils.TypeUtils;
 import io.ballerina.runtime.api.values.BError;
+import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
+import io.ballerina.runtime.api.values.BString;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
 import jakarta.jms.Session;
@@ -159,7 +161,12 @@ public class MessageDispatcher {
                     args[idx++] = getCaller();
                     break;
                 case TypeTags.RECORD_TYPE_TAG:
-                    args[idx++] = MessageMapper.toBallerinaMessage(message, (RecordType) referredType);
+                    BMap<BString, Object> bMessage =
+                            MessageMapper.toBallerinaMessage(message, (RecordType) referredType);
+                    if (transactionContext != null) {
+                        bMessage.addNativeData(NATIVE_TRANSACTION_CONTEXT, transactionContext);
+                    }
+                    args[idx++] = bMessage;
                     break;
                 default:
                     throw new IllegalStateException("Unsupported parameter type: " + referredType);

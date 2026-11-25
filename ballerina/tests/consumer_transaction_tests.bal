@@ -93,10 +93,12 @@ function testConsumerFailedBlockRedelivers() returns error? {
     check sendToQueue(BROKER_URL, queueName, "fail-once");
     MessageConsumer consumer = check newTransactedConsumer(queueName);
 
+    boolean received = false;
     do {
         transaction {
             TextMessage? first = check consumer->receive(5000);
             if first is TextMessage {
+                received = true;
                 check consumer->acknowledge(first);
             }
             check failStep();
@@ -114,10 +116,12 @@ function testConsumerFailedBlockRedelivers() returns error? {
     }
     check consumer->close();
 
+    test:assertTrue(received, "the message should be received before the block fails");
     if redelivered is () {
         test:assertFail("a failed block should have the message redelivered");
     }
     test:assertEquals(redelivered.payload, "fail-once");
+    test:assertEquals(redelivered.redelivered, true, "the message should be flagged as redelivered");
     test:assertEquals(check receiveTexts(queueName), [], "the second block's commit should acknowledge it");
 }
 
@@ -176,10 +180,12 @@ function testConsumerAcknowledgeAndProducerSendCommitTogether() returns error? {
     MessageConsumer consumer = check newTransactedConsumer(inQueue);
     MessageProducer producer = check new (BROKER_URL, transacted = true, destination = {queueName: outQueue});
 
+    boolean?[] redelivered = [];
     foreach int attempt in 1 ... 2 {
         transaction {
             TextMessage? msg = check consumer->receive(5000);
             if msg is TextMessage {
+                redelivered.push(msg.redelivered);
                 check producer->send({payload: "processed-" + attempt.toString()});
                 check consumer->acknowledge(msg);
             }
@@ -193,6 +199,7 @@ function testConsumerAcknowledgeAndProducerSendCommitTogether() returns error? {
     check consumer->close();
     check producer->close();
 
+    test:assertEquals(redelivered, [false, true], "the second attempt should receive the redelivered message");
     test:assertEquals(check receiveTexts(outQueue), ["processed-2"],
             "only the committed attempt's send should be delivered");
     test:assertEquals(check receiveTexts(inQueue), [], "the committed attempt should acknowledge the input");
@@ -427,7 +434,12 @@ function testConsumerMessageRedeliveredWhenProducerCommitFails() returns error? 
     }
     check consumer->close();
 
-    test:assertTrue(blockError is error, "the block should fail when the producer can't commit");
+    if blockError is () {
+        test:assertFail("the block should fail when the producer can't commit");
+    }
+    // Newer runtimes report a failed commit as "hazard".
+    test:assertTrue(blockError.message().includes("Failed to commit the transaction")
+            || blockError.message() == "hazard", "unexpected error message: " + blockError.message());
     if redelivered is () {
         test:assertFail("the message must not be lost when its output can't be committed");
     }

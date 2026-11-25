@@ -41,6 +41,8 @@ public final class SessionTransactionContext {
     private final boolean receives;
     // The transaction using the session, or null. Guarded by this.
     private String activeTransactionId;
+    // Whether the transaction using the session must roll back. Guarded by this.
+    private boolean rollbackOnly = false;
     // Calls using the session outside a transaction. Guarded by this.
     private int outsideCalls = 0;
 
@@ -141,13 +143,14 @@ public final class SessionTransactionContext {
     }
 
     /**
-     * Rolls back the session, unless a transaction is using it.
+     * Rolls back the session. If a transaction is using it, that transaction can then only roll back.
      *
      * @throws JMSException if the rollback fails
      */
     public void rollbackUnsettled() throws JMSException {
         synchronized (this) {
             if (activeTransactionId != null) {
+                rollbackOnly = true;
                 return;
             }
             outsideCalls++;
@@ -185,8 +188,13 @@ public final class SessionTransactionContext {
         return receives;
     }
 
+    synchronized boolean isRollbackOnly() {
+        return rollbackOnly;
+    }
+
     /** Lets the session join another transaction. */
     synchronized void leaveTransaction() {
         activeTransactionId = null;
+        rollbackOnly = false;
     }
 }

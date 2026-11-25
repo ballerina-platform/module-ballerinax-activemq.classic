@@ -39,7 +39,7 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
  * @since 0.1.0
  */
 public class Caller {
-    // Set only for a transacted session.
+    // Set on the callers and messages of a transacted session.
     static final String NATIVE_TRANSACTION_CONTEXT = "native.transaction.context";
 
     private Caller() {
@@ -83,6 +83,11 @@ public class Caller {
                 return createError(ACTIVEMQ_ERROR, "Cannot acknowledge inside a transaction block: the service's "
                         + "session isn't transacted. Use `sessionAckMode: SESSION_TRANSACTED` to acknowledge in "
                         + "a transaction.");
+            }
+            if (message.getNativeData(MessageMapper.NATIVE_MESSAGE) != null
+                    && message.getNativeData(NATIVE_TRANSACTION_CONTEXT) != transactionContext) {
+                return createError(ACTIVEMQ_ERROR, "Cannot acknowledge a message that another service or consumer "
+                        + "received.");
             }
             return transactionContext.joinCurrentTransaction();
         }

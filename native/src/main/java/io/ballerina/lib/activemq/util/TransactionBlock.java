@@ -98,11 +98,16 @@ final class TransactionBlock implements BallerinaTransactionContext {
         return sessions;
     }
 
-    /** Commits the sessions, senders first. If one fails, the rest are rolled back. */
+    /** Commits the sessions, senders first. If one fails or can only roll back, the rest are rolled back. */
     @Override
     public void commit() {
         BError failure = null;
-        for (SessionTransactionContext sessionContext : end()) {
+        List<SessionTransactionContext> sessions = end();
+        if (sessions.stream().anyMatch(SessionTransactionContext::isRollbackOnly)) {
+            failure = createError(ACTIVEMQ_ERROR, "Failed to commit the transaction: onMessage failed while the "
+                    + "transaction was using its session");
+        }
+        for (SessionTransactionContext sessionContext : sessions) {
             try {
                 if (failure == null) {
                     sessionContext.commitSession();

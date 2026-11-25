@@ -219,7 +219,8 @@ public final class Actions {
                     + "transacted. Create the consumer with `ackMode: SESSION_TRANSACTED` to acknowledge in a "
                     + "transaction.");
         }
-        if (message.getNativeData(NATIVE_STATE) instanceof ConsumerState receiver && receiver != state) {
+        if (message.getNativeData(MessageMapper.NATIVE_MESSAGE) != null
+                && message.getNativeData(NATIVE_STATE) != state) {
             return createError(ACTIVEMQ_ERROR, "Cannot acknowledge a message that was received by another consumer. "
                     + "Acknowledge it with the consumer that received it.");
         }

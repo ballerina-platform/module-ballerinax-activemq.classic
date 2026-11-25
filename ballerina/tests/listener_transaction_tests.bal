@@ -432,6 +432,120 @@ function testListenerErrorBeforeAcknowledgeRedelivers() returns error? {
     test:assertEquals(check receiveTexts(queueName), [], "both messages should be acknowledged in the end");
 }
 
+// Joins the session, then commits after onMessage has failed.
+function acknowledgeAfterOnMessageFails(Message message, Caller caller) returns error? {
+    transaction {
+        check caller->acknowledge(message);
+        setFlag("listener.async.joined");
+        check waitForFlag("listener.async.failed");
+        check commit;
+    }
+}
+
+isolated int lstAsyncDeliveries = 0;
+
+@test:Config {
+    groups: ["transaction", "listener-transaction"]
+}
+function testListenerErrorWhileAnotherStrandHoldsTheBlockRedelivers() returns error? {
+    string queueName = "tx.listener.async.queue";
+    check drainQueue(queueName);
+    Service svc = @ServiceConfig {
+        queueName: "tx.listener.async.queue",
+        sessionAckMode: SESSION_TRANSACTED,
+        redeliveryPolicy: {maximumRedeliveries: 5, initialRedeliveryDelay: 200, redeliveryDelay: 200}
+    } service object {
+        remote function onMessage(Message message, Caller caller) returns error? {
+            lock {
+                lstAsyncDeliveries += 1;
+            }
+            if message.redelivered != true {
+                future<error?> _ = start acknowledgeAfterOnMessageFails(message, caller);
+                check waitForFlag("listener.async.joined");
+                check failStep();
+            }
+            check caller->'commit();
+        }
+
+        // Called after the connector has recorded the failure.
+        remote function onError(Error err) returns error? {
+            test:assertEquals(err.message(), "simulated failure");
+            setFlag("listener.async.failed");
+        }
+    };
+    Listener txListener = check startService(svc);
+
+    check sendToQueue(BROKER_URL, queueName, "async");
+    check stopWhen(txListener, isolated function () returns boolean {
+        lock {
+            return lstAsyncDeliveries >= 2;
+        }
+    });
+
+    lock {
+        test:assertEquals(lstAsyncDeliveries, 2, "the block must not acknowledge a message whose onMessage failed");
+    }
+    test:assertEquals(check receiveTexts(queueName), [], "the second delivery should commit the message");
+}
+
+isolated string lstOtherMessageError = "";
+
+@test:Config {
+    groups: ["transaction", "listener-transaction"]
+}
+function testListenerAcknowledgeOfAnotherConsumersMessageReturnsError() returns error? {
+    string queueName = "tx.listener.othermessage.queue";
+    string otherQueue = "tx.listener.othermessage.other.queue";
+    check drainQueue(queueName);
+    check drainQueue(otherQueue);
+    Service svc = @ServiceConfig {
+        queueName: "tx.listener.othermessage.queue",
+        sessionAckMode: SESSION_TRANSACTED
+    } service object {
+        remote function onMessage(Message message, Caller caller) returns error? {
+            MessageConsumer other = check newTransactedConsumer("tx.listener.othermessage.other.queue");
+            TextMessage? foreign = check other->receive(5000);
+            Error? result = ();
+            if foreign is TextMessage {
+                transaction {
+                    result = caller->acknowledge(foreign);
+                    check commit;
+                }
+            }
+            check other->close();
+            Error? consumerResult = ();
+            MessageConsumer consumer = check newTransactedConsumer("tx.listener.othermessage.other.queue");
+            transaction {
+                consumerResult = consumer->acknowledge(message);
+                check commit;
+            }
+            check consumer->close();
+            check caller->'commit();
+            lock {
+                lstOtherMessageError = (result is Error ? result.message() : "no error") + "|"
+                        + (consumerResult is Error ? consumerResult.message() : "no error");
+            }
+        }
+    };
+    check sendToQueue(BROKER_URL, otherQueue, "foreign");
+    Listener txListener = check startService(svc);
+
+    check sendToQueue(BROKER_URL, queueName, "own");
+    check stopWhen(txListener, isolated function () returns boolean {
+        lock {
+            return lstOtherMessageError != "";
+        }
+    });
+
+    lock {
+        test:assertTrue(lstOtherMessageError.includes("another service or consumer"),
+                "unexpected result: " + lstOtherMessageError);
+        test:assertTrue(lstOtherMessageError.includes("received by another consumer"),
+                "unexpected result: " + lstOtherMessageError);
+    }
+    test:assertEquals(check receiveTexts(otherQueue), ["foreign"], "the other message should stay unacknowledged");
+}
+
 isolated int lstPanicDeliveries = 0;
 
 @test:Config {
