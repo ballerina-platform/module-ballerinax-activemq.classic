@@ -182,8 +182,8 @@ public type CertKey record {|
 # + scheduledPeriod - Period in milliseconds between deliveries
 # + scheduledRepeat - Number of additional deliveries after the first. `-1` repeats forever. Requires
 #                     `scheduledPeriod`
-# + scheduledCron - Cron expression controlling the delivery schedule. Overrides the other schedule
-#                   settings
+# + scheduledCron - Cron expression in the five-field format (e.g., `"0 12 * * *"` for every day at 12:00).
+#                   The other schedule settings then apply each time it fires
 public type SendOptions record {|
     string correlationId?;
     Destination replyTo?;
