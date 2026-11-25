@@ -91,15 +91,12 @@ public final class Actions {
     }
 
     public static Object send(BObject bProducer, BMap<BString, Object> bMessage, Object destinationObj) {
-        ProducerState producerState = (ProducerState) bProducer.getNativeData(NATIVE_STATE);
-        if (producerState != null && !producerState.closed) {
+        return execute(bProducer, "send message", state -> {
             // Must run on the calling strand.
-            BError transactionError = joinTransactionIfAny(producerState);
+            BError transactionError = joinTransactionIfAny(state);
             if (transactionError != null) {
                 return transactionError;
             }
-        }
-        return execute(bProducer, "send message", state -> {
             BMap<BString, Object> destination = destinationObj instanceof BMap<?, ?> rawDest
                     ? castToDestinationMap(rawDest) : state.defaultDestination;
             if (destination == null) {

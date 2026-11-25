@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, WSO2 LLC. (http://www.wso2.com)
+ * Copyright (c) 2025, WSO2 LLC. (http://www.wso2.com)
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -19,14 +19,12 @@
 package io.ballerina.lib.activemq.listener;
 
 import io.ballerina.lib.activemq.util.SessionTransactionContext;
-import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
 import io.ballerina.runtime.transactions.TransactionResourceManager;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
-import jakarta.jms.Session;
 
 import java.util.Objects;
 
@@ -40,7 +38,6 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
  */
 public class Caller {
     static final String NATIVE_MESSAGE = "native.message";
-    static final String NATIVE_SESSION = "native.session";
     // Set only for a transacted session.
     static final String NATIVE_TRANSACTION_CONTEXT = "native.transaction.context";
 
@@ -55,7 +52,7 @@ public class Caller {
      */
     public static Object commit(BObject caller) {
         return settleExplicitly(caller, "commit", "Error while committing the transaction: ",
-                SessionTransactionContext::commitSession, Session::commit);
+                SessionTransactionContext::commitSession);
     }
 
     /**
@@ -66,7 +63,7 @@ public class Caller {
      */
     public static Object rollback(BObject caller) {
         return settleExplicitly(caller, "roll back", "Error while rolling back the transaction: ",
-                SessionTransactionContext::rollbackSession, Session::rollback);
+                SessionTransactionContext::rollbackSession);
     }
 
     /**
@@ -101,37 +98,20 @@ public class Caller {
         return null;
     }
 
-    @FunctionalInterface
-    private interface Settlement<T> {
-        void run(T target) throws JMSException;
-    }
-
     private static Object settleExplicitly(BObject caller, String verb, String errorPrefix,
-                                           Settlement<SessionTransactionContext> transacted,
-                                           Settlement<Session> nonTransacted) {
-        Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
+                                           SessionTransactionContext.Settlement settlement) {
         SessionTransactionContext transactionContext =
                 (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
-        // Null if the session isn't transacted. The JMS client then rejects the call.
-        if (transactionContext != null) {
-            BError notAllowed = transactionContext.beginExplicitSettlement(verb);
-            if (notAllowed != null) {
-                return notAllowed;
-            }
+        if (transactionContext == null) {
+            return createError("Error", errorPrefix + "Not a transacted session");
         }
-        try {
-            if (transactionContext != null) {
-                transacted.run(transactionContext);
-            } else {
-                nonTransacted.run(nativeSession);
+        return transactionContext.settleExplicitly(verb, () -> {
+            try {
+                settlement.run(transactionContext);
+            } catch (JMSException exception) {
+                return createError("Error", errorPrefix + exception.getMessage(), exception);
             }
-        } catch (JMSException exception) {
-            return createError("Error", errorPrefix + exception.getMessage(), exception);
-        } finally {
-            if (transactionContext != null) {
-                transactionContext.endOutsideCall();
-            }
-        }
-        return null;
+            return null;
+        });
     }
 }

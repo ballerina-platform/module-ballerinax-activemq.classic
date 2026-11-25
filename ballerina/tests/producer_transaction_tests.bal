@@ -14,7 +14,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/lang.runtime;
 import ballerina/test;
 
 // Tests for transacted producers taking part in Ballerina `transaction` blocks.
@@ -55,11 +54,32 @@ isolated function failRetriableStep() returns error? {
     return error error:Retriable("simulated transient failure");
 }
 
-// Sends one message in its own transaction, holding the transaction open for `holdSeconds`.
-function sendInSlowTransaction(MessageProducer producer, string payload, decimal holdSeconds) returns error? {
+isolated map<boolean> txFlags = {};
+
+isolated function setFlag(string name) {
+    lock {
+        txFlags[name] = true;
+    }
+}
+
+isolated function waitForFlag(string name) returns error? {
+    boolean isSet = waitUntil(isolated function () returns boolean {
+        lock {
+            return txFlags.hasKey(name);
+        }
+    });
+    if !isSet {
+        return error("timed out waiting for the flag: " + name);
+    }
+}
+
+// Sends one message in its own transaction. Sets `<name>.joined`, then holds the transaction open until
+// `<name>.release` is set.
+function sendInHeldTransaction(MessageProducer producer, string payload, string name) returns error? {
     transaction {
         check producer->send({payload});
-        runtime:sleep(holdSeconds);
+        setFlag(name + ".joined");
+        check waitForFlag(name + ".release");
         check commit;
     }
 }
@@ -307,13 +327,14 @@ function testProducerSharedByConcurrentTransactionsReturnsError() returns error?
     check drainQueue(queueName);
     MessageProducer producer = check new (BROKER_URL, transacted = true, destination = {queueName});
 
-    future<error?> first = start sendInSlowTransaction(producer, "first", 3);
-    runtime:sleep(1);
+    future<error?> first = start sendInHeldTransaction(producer, "first", "producer.shared");
+    check waitForFlag("producer.shared.joined");
     Error? secondResult = ();
     transaction {
         secondResult = producer->send({payload: "second"});
         check commit;
     }
+    setFlag("producer.shared.release");
     check wait first;
     check producer->close();
 
@@ -482,8 +503,8 @@ function testSeparateProducersInConcurrentTransactionsCommitIndependently() retu
     MessageProducer first = check new (BROKER_URL, transacted = true, destination = {queueName});
     MessageProducer second = check new (BROKER_URL, transacted = true, destination = {queueName});
 
-    future<error?> slow = start sendInSlowTransaction(first, "from-first", 2);
-    runtime:sleep(0.5);
+    future<error?> held = start sendInHeldTransaction(first, "from-first", "producer.concurrent");
+    check waitForFlag("producer.concurrent.joined");
     transaction {
         check second->send({payload: "from-second"});
         check commit;
@@ -492,7 +513,8 @@ function testSeparateProducersInConcurrentTransactionsCommitIndependently() retu
     MessageConsumer observer = check new (BROKER_URL, destination = {queueName});
     TextMessage? early = check observer->receive(1000);
     check observer->close();
-    check wait slow;
+    setFlag("producer.concurrent.release");
+    check wait held;
     check first->close();
     check second->close();
 

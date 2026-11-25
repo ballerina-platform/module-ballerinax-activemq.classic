@@ -14,7 +14,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/lang.runtime;
 import ballerina/test;
 
 // Tests for pull consumers whose acknowledgements take part in Ballerina `transaction` blocks.
@@ -260,14 +259,16 @@ function testConsumerExplicitCommitInsideBlockReturnsError() returns error? {
     test:assertEquals(check receiveTexts(queueName), [], "the block's commit should still acknowledge it");
 }
 
-// Receives and acknowledges one message in its own transaction, holding it open for `holdSeconds`.
-function acknowledgeInSlowTransaction(MessageConsumer consumer, decimal holdSeconds) returns error? {
+// Receives and acknowledges one message in its own transaction. Sets `<name>.joined`, then holds the
+// transaction open until `<name>.release` is set.
+function acknowledgeInHeldTransaction(MessageConsumer consumer, string name) returns error? {
     transaction {
         TextMessage? msg = check consumer->receive(5000);
         if msg is TextMessage {
             check consumer->acknowledge(msg);
         }
-        runtime:sleep(holdSeconds);
+        setFlag(name + ".joined");
+        check waitForFlag(name + ".release");
         check commit;
     }
 }
@@ -281,8 +282,8 @@ function testConsumerSharedByConcurrentTransactionsReturnsError() returns error?
     check sendToQueue(BROKER_URL, queueName, "first");
     MessageConsumer consumer = check newTransactedConsumer(queueName);
 
-    future<error?> slow = start acknowledgeInSlowTransaction(consumer, 3);
-    runtime:sleep(1);
+    future<error?> held = start acknowledgeInHeldTransaction(consumer, "consumer.shared");
+    check waitForFlag("consumer.shared.joined");
     Error? secondResult = ();
     transaction {
         // Receiving joins the consumer's session, so the second transaction is refused at the receive.
@@ -292,7 +293,8 @@ function testConsumerSharedByConcurrentTransactionsReturnsError() returns error?
         }
         check commit;
     }
-    check wait slow;
+    setFlag("consumer.shared.release");
+    check wait held;
 
     // Once the first transaction has ended, the same consumer must join a later one normally.
     check sendToQueue(BROKER_URL, queueName, "third");
@@ -473,10 +475,11 @@ function testConsumerReceiveOutsideBlockWhileInBlockReturnsError() returns error
     check sendToQueue(BROKER_URL, queueName, "second");
     MessageConsumer consumer = check newTransactedConsumer(queueName);
 
-    future<error?> slow = start acknowledgeInSlowTransaction(consumer, 3);
-    runtime:sleep(1);
+    future<error?> held = start acknowledgeInHeldTransaction(consumer, "consumer.outside");
+    check waitForFlag("consumer.outside.joined");
     TextMessage?|Error outside = consumer->receive(1000);
-    check wait slow;
+    setFlag("consumer.outside.release");
+    check wait held;
     check consumer->close();
 
     if outside !is Error {
@@ -487,8 +490,28 @@ function testConsumerReceiveOutsideBlockWhileInBlockReturnsError() returns error
     test:assertEquals(check receiveTexts(queueName), ["second"], "the block should acknowledge only its message");
 }
 
-isolated function receiveOutsideBlock(MessageConsumer consumer, int timeoutMs) returns Error? {
-    TextMessage? _ = check consumer->receive(timeoutMs);
+// Receives outside a transaction. Retries if the receive is refused because a block is using the consumer.
+isolated function receiveOutsideBlock(MessageConsumer consumer, int timeoutMs) {
+    _ = waitUntil(isolated function () returns boolean {
+        TextMessage?|Error received = consumer->receive(timeoutMs);
+        return received !is Error;
+    });
+}
+
+isolated function isJoinRefused(MessageConsumer consumer) returns boolean {
+    string message = "";
+    do {
+        transaction {
+            TextMessage?|Error inBlock = consumer->receiveNoWait();
+            if inBlock is Error {
+                message = inBlock.message();
+            }
+            check commit;
+        }
+    } on fail {
+        return false;
+    }
+    return message.includes("being used outside the transaction");
 }
 
 @test:Config {
@@ -497,18 +520,12 @@ isolated function receiveOutsideBlock(MessageConsumer consumer, int timeoutMs) r
 function testConsumerJoinWhileReceivingOutsideReturnsError() returns error? {
     string queueName = "tx.consumer.joinwhilereceiving.queue";
     check drainQueue(queueName);
-    MessageConsumer consumer = check newTransactedConsumer(queueName);
+    final MessageConsumer consumer = check newTransactedConsumer(queueName);
 
-    future<Error?> outside = start receiveOutsideBlock(consumer, 3000);
-    runtime:sleep(1);
-    Error? joinError = ();
-    transaction {
-        TextMessage?|Error inBlock = consumer->receive(1000);
-        if inBlock is Error {
-            joinError = inBlock;
-        }
-        check commit;
-    }
+    future<()> outside = start receiveOutsideBlock(consumer, 3000);
+    boolean joinRefused = waitUntil(isolated function () returns boolean {
+        return isJoinRefused(consumer);
+    });
     check wait outside;
     // Once the outside receive has ended, the consumer can join a block.
     check sendToQueue(BROKER_URL, queueName, "later");
@@ -519,11 +536,7 @@ function testConsumerJoinWhileReceivingOutsideReturnsError() returns error? {
     }
     check consumer->close();
 
-    if joinError is () {
-        test:assertFail("a consumer must not join a block while another strand is receiving with it");
-    }
-    test:assertTrue(joinError.message().includes("being used outside the transaction"),
-            "unexpected error message: " + joinError.message());
+    test:assertTrue(joinRefused, "a consumer must not join a block while another strand is receiving with it");
     test:assertTrue(later is TextMessage, "the consumer should join a later block");
 }
 
@@ -534,14 +547,16 @@ function testConsumerReceiveNoWaitJoinsBlock() returns error? {
     string queueName = "tx.consumer.nowait.queue";
     check drainQueue(queueName);
     check sendToQueue(BROKER_URL, queueName, "no-wait");
-    MessageConsumer consumer = check newTransactedConsumer(queueName);
-    // Gives the broker time to push the message into the consumer's prefetch buffer.
-    runtime:sleep(1);
+    final MessageConsumer consumer = check newTransactedConsumer(queueName);
 
-    TextMessage? first = ();
+    boolean received = false;
     do {
         transaction {
-            first = check consumer->receiveNoWait();
+            // The broker may not have pushed the message to the consumer yet.
+            received = waitUntil(isolated function () returns boolean {
+                TextMessage?|Error first = consumer->receiveNoWait();
+                return first is TextMessage;
+            });
             check failStep();
             check commit;
         }
@@ -551,7 +566,7 @@ function testConsumerReceiveNoWaitJoinsBlock() returns error? {
     check consumer->'commit();
     check consumer->close();
 
-    test:assertTrue(first is TextMessage, "the message should be received");
+    test:assertTrue(received, "the message should be received");
     if redelivered is () {
         test:assertFail("a message received with receiveNoWait() should be rolled back with the block");
     }

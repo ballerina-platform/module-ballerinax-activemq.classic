@@ -23,10 +23,16 @@ import io.ballerina.runtime.transactions.TransactionResourceManager;
 import jakarta.jms.JMSException;
 import jakarta.jms.Session;
 
+import java.util.function.Supplier;
+
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 
-/** Lets a transacted JMS session join a Ballerina {@code transaction} block. The block settles it. */
+/**
+ * Lets a transacted JMS session join a Ballerina {@code transaction} block. The block settles it.
+ *
+ * @since 0.1.0
+ */
 public final class SessionTransactionContext {
 
     private final Session session;
@@ -37,6 +43,12 @@ public final class SessionTransactionContext {
     private String activeTransactionId;
     // Calls using the session outside a transaction. Guarded by this.
     private int outsideCalls = 0;
+
+    /** A commit or rollback of the session. */
+    @FunctionalInterface
+    public interface Settlement {
+        void run(SessionTransactionContext transactionContext) throws JMSException;
+    }
 
     /**
      * @param session      the transacted JMS session
@@ -76,13 +88,29 @@ public final class SessionTransactionContext {
     }
 
     /**
-     * Starts an explicit commit or rollback. Must be called on the calling strand, and followed by
-     * {@link #endOutsideCall()} if it succeeds.
+     * Runs an explicit commit or rollback. Must be called on the calling strand.
      *
-     * @param operation {@code "commit"} or {@code "roll back"}
-     * @return an error inside a transaction or while one is using the session, or null
+     * @param operation  {@code "commit"} or {@code "roll back"}, used in the error message
+     * @param settlement the commit or rollback
+     * @return the result, or an error inside a transaction or while one is using the session
      */
-    public synchronized BError beginExplicitSettlement(String operation) {
+    public Object settleExplicitly(String operation, Supplier<Object> settlement) {
+        BError notAllowed = beginExplicitSettlement(operation);
+        return notAllowed != null ? notAllowed : runOutsideCall(settlement);
+    }
+
+    /**
+     * Runs a receive outside a transaction.
+     *
+     * @param receive the receive
+     * @return the result, or an error while a transaction is using the session
+     */
+    public Object receiveOutside(Supplier<Object> receive) {
+        BError notAllowed = beginOutsideReceive();
+        return notAllowed != null ? notAllowed : runOutsideCall(receive);
+    }
+
+    private synchronized BError beginExplicitSettlement(String operation) {
         if (activeTransactionId != null || TransactionResourceManager.getInstance().isInTransaction()) {
             return createError(ACTIVEMQ_ERROR, "Cannot " + operation + " explicitly inside a transaction block or "
                     + "while the " + resourceName + " is part of one. The block's commit or rollback settles it.");
@@ -91,12 +119,7 @@ public final class SessionTransactionContext {
         return null;
     }
 
-    /**
-     * Starts a receive outside a transaction. Must be followed by {@link #endOutsideCall()} if it succeeds.
-     *
-     * @return an error while a transaction is using the session, or null
-     */
-    public synchronized BError beginOutsideReceive() {
+    private synchronized BError beginOutsideReceive() {
         if (activeTransactionId != null) {
             return createError(ACTIVEMQ_ERROR, "Cannot receive outside a transaction while the " + resourceName
                     + " is part of one. Use a separate " + resourceName + ".");
@@ -105,8 +128,15 @@ public final class SessionTransactionContext {
         return null;
     }
 
-    /** Ends a call started by {@link #beginExplicitSettlement} or {@link #beginOutsideReceive}. */
-    public synchronized void endOutsideCall() {
+    private Object runOutsideCall(Supplier<Object> call) {
+        try {
+            return call.get();
+        } finally {
+            endOutsideCall();
+        }
+    }
+
+    private synchronized void endOutsideCall() {
         outsideCalls--;
     }
 

@@ -109,34 +109,22 @@ public final class Actions {
 
     private static Object receiveFrom(BObject bConsumer, BTypedesc bTypedesc, BlockingReceive blockingReceive) {
         ConsumerState state = (ConsumerState) bConsumer.getNativeData(NATIVE_STATE);
-        if (state == null) {
-            return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is not initialized");
-        }
-        synchronized (state) {
-            if (state.closed) {
-                return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is already closed");
-            }
+        BError notOpen = checkOpen(state);
+        if (notOpen != null) {
+            return notOpen;
         }
         if (state.transactionContext == null) {
-            return receiveFrom(state, bTypedesc, blockingReceive);
+            return doReceive(state, bTypedesc, blockingReceive);
         }
         // Must run on the calling strand. Join before receiving, so that a later failure rolls the message back.
         if (TransactionResourceManager.getInstance().isInTransaction()) {
             BError joinError = state.transactionContext.joinCurrentTransaction();
-            return joinError != null ? joinError : receiveFrom(state, bTypedesc, blockingReceive);
+            return joinError != null ? joinError : doReceive(state, bTypedesc, blockingReceive);
         }
-        BError notAllowed = state.transactionContext.beginOutsideReceive();
-        if (notAllowed != null) {
-            return notAllowed;
-        }
-        try {
-            return receiveFrom(state, bTypedesc, blockingReceive);
-        } finally {
-            state.transactionContext.endOutsideCall();
-        }
+        return state.transactionContext.receiveOutside(() -> doReceive(state, bTypedesc, blockingReceive));
     }
 
-    private static Object receiveFrom(ConsumerState state, BTypedesc bTypedesc, BlockingReceive blockingReceive) {
+    private static Object doReceive(ConsumerState state, BTypedesc bTypedesc, BlockingReceive blockingReceive) {
         try {
             Message jmsMsg;
             synchronized (state.sessionLock) {
@@ -189,25 +177,11 @@ public final class Actions {
     }
 
     public static Object commit(BObject bConsumer) {
-        return settleExplicitly(bConsumer, "commit", "commit transaction", state -> {
-            if (state.transactionContext == null) {
-                throw new JMSException(
-                        "'commit' is only valid when the consumer is configured with ackMode: SESSION_TRANSACTED");
-            }
-            state.transactionContext.commitSession();
-            return null;
-        });
+        return settleExplicitly(bConsumer, "commit", "commit", SessionTransactionContext::commitSession);
     }
 
     public static Object rollback(BObject bConsumer) {
-        return settleExplicitly(bConsumer, "roll back", "rollback transaction", state -> {
-            if (state.transactionContext == null) {
-                throw new JMSException(
-                        "'rollback' is only valid when the consumer is configured with ackMode: SESSION_TRANSACTED");
-            }
-            state.transactionContext.rollbackSession();
-            return null;
-        });
+        return settleExplicitly(bConsumer, "rollback", "roll back", SessionTransactionContext::rollbackSession);
     }
 
     public static Object close(BObject bConsumer) {
@@ -236,11 +210,9 @@ public final class Actions {
     /** Joins the caller's transaction, or returns an error if the consumer can't. */
     private static Object joinTransaction(BObject bConsumer, BMap<BString, Object> message) {
         ConsumerState state = (ConsumerState) bConsumer.getNativeData(NATIVE_STATE);
-        if (state == null) {
-            return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is not initialized");
-        }
-        if (state.closed) {
-            return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is already closed");
+        BError notOpen = checkOpen(state);
+        if (notOpen != null) {
+            return notOpen;
         }
         if (state.transactionContext == null) {
             return createError(ACTIVEMQ_ERROR, "Cannot acknowledge inside a transaction block: the consumer isn't "
@@ -254,19 +226,28 @@ public final class Actions {
         return state.transactionContext.joinCurrentTransaction();
     }
 
-    private static Object settleExplicitly(BObject bConsumer, String verb, String operation, JmsAction action) {
+    private static Object settleExplicitly(BObject bConsumer, String method, String verb,
+                                           SessionTransactionContext.Settlement settlement) {
         ConsumerState state = (ConsumerState) bConsumer.getNativeData(NATIVE_STATE);
         if (state == null || state.transactionContext == null) {
-            return execute(bConsumer, operation, action);
+            return execute(bConsumer, method + " transaction", consumerState -> {
+                throw new JMSException("'" + method
+                        + "' is only valid when the consumer is configured with ackMode: SESSION_TRANSACTED");
+            });
         }
-        BError notAllowed = state.transactionContext.beginExplicitSettlement(verb);
-        if (notAllowed != null) {
-            return notAllowed;
+        return state.transactionContext.settleExplicitly(verb,
+                () -> execute(bConsumer, method + " transaction", consumerState -> {
+                    settlement.run(consumerState.transactionContext);
+                    return null;
+                }));
+    }
+
+    private static BError checkOpen(ConsumerState state) {
+        if (state == null) {
+            return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is not initialized");
         }
-        try {
-            return execute(bConsumer, operation, action);
-        } finally {
-            state.transactionContext.endOutsideCall();
+        synchronized (state) {
+            return state.closed ? createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is already closed") : null;
         }
     }
 }

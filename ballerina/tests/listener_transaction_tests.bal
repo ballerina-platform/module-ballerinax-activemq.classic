@@ -14,19 +14,26 @@
 // specific language governing permissions and limitations
 // under the License.
 
-import ballerina/lang.runtime;
 import ballerina/test;
 
 // Tests for listener services whose acknowledgements take part in Ballerina `transaction` blocks.
 
 final MessageProducer listenerTxOutProducer = check new (BROKER_URL, transacted = true);
 
-// Polls `condition` until it holds or the timeout passes.
-isolated function waitUntil(isolated function () returns boolean condition, decimal timeoutSeconds = 15) {
-    decimal waited = 0;
-    while waited < timeoutSeconds && !condition() {
-        runtime:sleep(0.25d);
-        waited += 0.25d;
+// Attaches `svc` to a new listener and starts it.
+function startService(Service svc) returns Listener|error {
+    Listener txListener = check new (BROKER_URL);
+    check txListener.attach(svc);
+    check txListener.'start();
+    return txListener;
+}
+
+// Waits until `condition` holds and stops the listener. Stopping waits for the message in progress.
+function stopWhen(Listener txListener, isolated function () returns boolean condition) returns error? {
+    boolean held = waitUntil(condition);
+    check txListener.gracefulStop();
+    if !held {
+        return error("timed out waiting for the listener");
     }
 }
 
@@ -38,7 +45,6 @@ isolated int lstCommitDeliveries = 0;
 function testListenerAcknowledgeInBlockCommits() returns error? {
     string queueName = "tx.listener.commit.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.commit.queue",
         sessionAckMode: SESSION_TRANSACTED
@@ -53,17 +59,14 @@ function testListenerAcknowledgeInBlockCommits() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "commit-me");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstCommitDeliveries >= 1;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertEquals(lstCommitDeliveries, 1, "the committed message should be delivered once");
@@ -79,7 +82,6 @@ isolated int lstRollbackDeliveries = 0;
 function testListenerRollbackInBlockRedelivers() returns error? {
     string queueName = "tx.listener.rollback.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.rollback.queue",
         sessionAckMode: SESSION_TRANSACTED,
@@ -101,17 +103,14 @@ function testListenerRollbackInBlockRedelivers() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "roll-me-back-once");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstRollbackDeliveries >= 2;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertEquals(lstRollbackDeliveries, 2,
@@ -128,7 +127,6 @@ isolated int lstFailedBlockDeliveries = 0;
 function testListenerFailedBlockRedelivers() returns error? {
     string queueName = "tx.listener.failedblock.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.failedblock.queue",
         sessionAckMode: SESSION_TRANSACTED,
@@ -153,17 +151,14 @@ function testListenerFailedBlockRedelivers() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "fail-once");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstFailedBlockDeliveries >= 2;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertEquals(lstFailedBlockDeliveries, 2, "a failed block should have the message redelivered");
@@ -181,7 +176,6 @@ function testListenerAcknowledgeAndProducerSendCommitTogether() returns error? {
     string outQueue = "tx.listener.withproducer.out.queue";
     check drainQueue(inQueue);
     check drainQueue(outQueue);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.withproducer.in.queue",
         sessionAckMode: SESSION_TRANSACTED,
@@ -205,17 +199,14 @@ function testListenerAcknowledgeAndProducerSendCommitTogether() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, inQueue, "process-me");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstWithProducerDeliveries >= 2;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     test:assertEquals(check receiveTexts(outQueue), ["processed-2"],
             "only the committed attempt's send should be delivered");
@@ -230,7 +221,6 @@ isolated string[] lstEarlierPayloads = [];
 function testListenerRollbackRedeliversMessagesReceivedBeforeBlock() returns error? {
     string queueName = "tx.listener.earlier.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.earlier.queue",
         sessionAckMode: SESSION_TRANSACTED,
@@ -256,18 +246,15 @@ function testListenerRollbackRedeliversMessagesReceivedBeforeBlock() returns err
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "first");
     check sendToQueue(BROKER_URL, queueName, "second");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstEarlierPayloads.length() >= 4;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertEquals(lstEarlierPayloads, ["first", "second", "first", "second"],
@@ -285,7 +272,6 @@ isolated string lstNonTransactedError = "";
 function testListenerNonTransactedAcknowledgeInBlockReturnsError() returns error? {
     string queueName = "tx.listener.nontransacted.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.nontransacted.queue",
         sessionAckMode: CLIENT_ACKNOWLEDGE
@@ -303,17 +289,14 @@ function testListenerNonTransactedAcknowledgeInBlockReturnsError() returns error
             check caller->acknowledge(message);
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "client-ack");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstNonTransactedError != "";
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertTrue(lstNonTransactedError.includes("isn't transacted"),
@@ -330,7 +313,6 @@ isolated string lstExplicitCommitError = "";
 function testListenerExplicitCommitInsideBlockReturnsError() returns error? {
     string queueName = "tx.listener.explicit.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.explicit.queue",
         sessionAckMode: SESSION_TRANSACTED
@@ -347,17 +329,14 @@ function testListenerExplicitCommitInsideBlockReturnsError() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "explicit");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstExplicitCommitError != "";
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertTrue(lstExplicitCommitError.includes("Cannot commit explicitly"),
@@ -374,7 +353,6 @@ isolated string lstExplicitBeforeJoinError = "";
 function testListenerExplicitCommitBeforeJoiningReturnsError() returns error? {
     string queueName = "tx.listener.explicitbeforejoin.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.explicitbeforejoin.queue",
         sessionAckMode: SESSION_TRANSACTED
@@ -392,17 +370,14 @@ function testListenerExplicitCommitBeforeJoiningReturnsError() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "explicit-before-join");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstExplicitBeforeJoinError != "";
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertTrue(lstExplicitBeforeJoinError.includes("Cannot commit explicitly inside a transaction block"),
@@ -419,7 +394,6 @@ isolated string[] lstErrorPayloads = [];
 function testListenerErrorBeforeAcknowledgeRedelivers() returns error? {
     string queueName = "tx.listener.errorbeforeack.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.errorbeforeack.queue",
         sessionAckMode: SESSION_TRANSACTED,
@@ -441,18 +415,15 @@ function testListenerErrorBeforeAcknowledgeRedelivers() returns error? {
             }
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "first");
     check sendToQueue(BROKER_URL, queueName, "second");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstErrorPayloads.length() >= 3;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertEquals(lstErrorPayloads, ["first", "first", "second"],
@@ -469,7 +440,6 @@ isolated int lstPanicDeliveries = 0;
 function testListenerPanicBeforeSettlingRedelivers() returns error? {
     string queueName = "tx.listener.panic.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.panic.queue",
         sessionAckMode: SESSION_TRANSACTED,
@@ -487,17 +457,14 @@ function testListenerPanicBeforeSettlingRedelivers() returns error? {
             check caller->'commit();
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
     check sendToQueue(BROKER_URL, queueName, "panic-once");
-    waitUntil(isolated function () returns boolean {
+    check stopWhen(txListener, isolated function () returns boolean {
         lock {
             return lstPanicDeliveries >= 2;
         }
     });
-    runtime:sleep(1);
-    check txListener.gracefulStop();
 
     lock {
         test:assertEquals(lstPanicDeliveries, 2, "a message whose onMessage panicked should be redelivered");
@@ -505,7 +472,7 @@ function testListenerPanicBeforeSettlingRedelivers() returns error? {
     test:assertEquals(check receiveTexts(queueName), [], "the second delivery should commit the message");
 }
 
-isolated int lstErrorAfterCommitDeliveries = 0;
+isolated string[] lstErrorAfterCommitPayloads = [];
 
 @test:Config {
     groups: ["transaction", "listener-transaction"]
@@ -513,14 +480,13 @@ isolated int lstErrorAfterCommitDeliveries = 0;
 function testListenerErrorAfterCommitDoesNotRedeliver() returns error? {
     string queueName = "tx.listener.erroraftercommit.queue";
     check drainQueue(queueName);
-    Listener txListener = check new (BROKER_URL);
     Service svc = @ServiceConfig {
         queueName: "tx.listener.erroraftercommit.queue",
         sessionAckMode: SESSION_TRANSACTED
     } service object {
-        remote function onMessage(Message message, Caller caller) returns error? {
+        remote function onMessage(record {|*Message; string payload;|} message, Caller caller) returns error? {
             lock {
-                lstErrorAfterCommitDeliveries += 1;
+                lstErrorAfterCommitPayloads.push(message.payload);
             }
             transaction {
                 check caller->acknowledge(message);
@@ -529,15 +495,20 @@ function testListenerErrorAfterCommitDoesNotRedeliver() returns error? {
             check failStep();
         }
     };
-    check txListener.attach(svc);
-    check txListener.'start();
+    Listener txListener = check startService(svc);
 
+    // A redelivery of the first message would arrive before the marker.
     check sendToQueue(BROKER_URL, queueName, "committed");
-    runtime:sleep(3);
-    check txListener.gracefulStop();
+    check sendToQueue(BROKER_URL, queueName, "marker");
+    check stopWhen(txListener, isolated function () returns boolean {
+        lock {
+            return lstErrorAfterCommitPayloads.indexOf("marker") !is ();
+        }
+    });
 
     lock {
-        test:assertEquals(lstErrorAfterCommitDeliveries, 1, "a committed message must not be redelivered");
+        test:assertEquals(lstErrorAfterCommitPayloads, ["committed", "marker"],
+                "a committed message must not be redelivered");
     }
-    test:assertEquals(check receiveTexts(queueName), [], "the message should stay acknowledged");
+    test:assertEquals(check receiveTexts(queueName), [], "both messages should stay acknowledged");
 }

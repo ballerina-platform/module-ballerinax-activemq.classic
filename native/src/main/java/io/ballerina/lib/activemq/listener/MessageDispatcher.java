@@ -39,7 +39,6 @@ import jakarta.jms.Session;
 import java.io.PrintStream;
 import java.util.Optional;
 
-import static io.ballerina.lib.activemq.listener.Caller.NATIVE_SESSION;
 import static io.ballerina.lib.activemq.listener.Caller.NATIVE_TRANSACTION_CONTEXT;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.BCALLER_NAME;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_ERROR_METHOD;
@@ -176,7 +175,6 @@ public class MessageDispatcher {
      */
     private BObject getCaller() {
         BObject caller = ValueCreator.createObjectValue(getModule(), BCALLER_NAME);
-        caller.addNativeData(NATIVE_SESSION, session);
         if (transactionContext != null) {
             caller.addNativeData(NATIVE_TRANSACTION_CONTEXT, transactionContext);
         }

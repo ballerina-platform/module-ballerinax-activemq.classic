@@ -204,17 +204,26 @@ isolated int itAckClientBindFailErrorCount = 0;
 isolated int itAckTxBindFailGoodCount = 0;
 isolated int itAckTxBindFailErrorCount = 0;
 
-isolated function waitForCounts(isolated function () returns [int, int] readCounts,
-        int expectedGood, int expectedError, decimal timeoutSeconds = 15) {
+// Polls `condition` until it holds or the timeout passes. Returns whether it held.
+isolated function waitUntil(isolated function () returns boolean condition, decimal timeoutSeconds = 15)
+        returns boolean {
     decimal waited = 0;
-    while waited < timeoutSeconds {
-        [int, int] [good, errs] = readCounts();
-        if good >= expectedGood && errs >= expectedError {
-            return;
+    while !condition() {
+        if waited >= timeoutSeconds {
+            return false;
         }
         runtime:sleep(0.25d);
         waited += 0.25d;
     }
+    return true;
+}
+
+isolated function waitForCounts(isolated function () returns [int, int] readCounts,
+        int expectedGood, int expectedError, decimal timeoutSeconds = 15) {
+    _ = waitUntil(isolated function () returns boolean {
+        [int, int] [good, errs] = readCounts();
+        return good >= expectedGood && errs >= expectedError;
+    }, timeoutSeconds);
 }
 
 // A message that fails data binding never reaches onMessage, so the service has no Caller to roll it

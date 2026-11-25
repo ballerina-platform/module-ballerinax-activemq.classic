@@ -36,6 +36,8 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 /**
  * The JMS sessions that joined a Ballerina {@code transaction} block. Sessions that only send commit first, so a
  * failed send rolls back the received messages. One session's failure doesn't affect the others.
+ *
+ * @since 0.1.0
  */
 final class TransactionBlock implements BallerinaTransactionContext {
 
