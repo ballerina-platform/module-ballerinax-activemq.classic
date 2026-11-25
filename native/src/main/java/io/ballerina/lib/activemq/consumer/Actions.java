@@ -51,9 +51,7 @@ public final class Actions {
 
     private static final class ConsumerState {
         final Connection connection;
-        final Session session;
         final MessageConsumer consumer;
-        final boolean transacted;
         final Object sessionLock = new Object();
         // Non-null only for a transacted consumer.
         final SessionTransactionContext transactionContext;
@@ -61,11 +59,9 @@ public final class Actions {
 
         ConsumerState(Connection connection, Session session, MessageConsumer consumer, boolean transacted) {
             this.connection = connection;
-            this.session = session;
             this.consumer = consumer;
-            this.transacted = transacted;
             this.transactionContext = transacted
-                    ? new SessionTransactionContext(session, sessionLock, "consumer") : null;
+                    ? new SessionTransactionContext(session, sessionLock, "consumer", true) : null;
         }
     }
 
@@ -121,14 +117,26 @@ public final class Actions {
                 return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is already closed");
             }
         }
-        // Must run here, on the calling strand. A transacted consumer joins the caller's transaction before it
-        // receives, so a failure anywhere after the receive rolls the message back with the block.
-        if (state.transactionContext != null && TransactionResourceManager.getInstance().isInTransaction()) {
-            BError joinError = state.transactionContext.joinCurrentTransaction();
-            if (joinError != null) {
-                return joinError;
-            }
+        if (state.transactionContext == null) {
+            return receiveFrom(state, bTypedesc, blockingReceive);
         }
+        // Must run on the calling strand. Join before receiving, so that a later failure rolls the message back.
+        if (TransactionResourceManager.getInstance().isInTransaction()) {
+            BError joinError = state.transactionContext.joinCurrentTransaction();
+            return joinError != null ? joinError : receiveFrom(state, bTypedesc, blockingReceive);
+        }
+        BError notAllowed = state.transactionContext.beginOutsideReceive();
+        if (notAllowed != null) {
+            return notAllowed;
+        }
+        try {
+            return receiveFrom(state, bTypedesc, blockingReceive);
+        } finally {
+            state.transactionContext.endOutsideCall();
+        }
+    }
+
+    private static Object receiveFrom(ConsumerState state, BTypedesc bTypedesc, BlockingReceive blockingReceive) {
         try {
             Message jmsMsg;
             synchronized (state.sessionLock) {
@@ -152,16 +160,11 @@ public final class Actions {
         }
     }
 
-    /**
-     * Acknowledges a received message. Inside a Ballerina transaction block, a transacted consumer's session joins
-     * the block instead: the block's commit acknowledges every message the session has received, and its rollback
-     * has them redelivered. A consumer that isn't transacted can't acknowledge inside a block, because the
-     * acknowledgement couldn't be rolled back with it.
-     */
+    /** Acknowledges a message. Inside a transaction, the consumer joins it and the commit acknowledges. */
     public static Object acknowledge(BObject bConsumer, BMap<BString, Object> message) {
-        // Must run here, on the calling strand: the transaction state belongs to that strand.
+        // Must run on the calling strand.
         if (TransactionResourceManager.getInstance().isInTransaction()) {
-            return joinTransaction(bConsumer);
+            return joinTransaction(bConsumer, message);
         }
         Object nativeMessage = message.getNativeData(MessageMapper.NATIVE_MESSAGE);
         if (!(nativeMessage instanceof Message jmsMsg)) {
@@ -186,31 +189,23 @@ public final class Actions {
     }
 
     public static Object commit(BObject bConsumer) {
-        BError notAllowed = checkExplicitSettlementAllowed(bConsumer, "commit");
-        if (notAllowed != null) {
-            return notAllowed;
-        }
-        return execute(bConsumer, "commit transaction", state -> {
-            if (!state.transacted) {
+        return settleExplicitly(bConsumer, "commit", "commit transaction", state -> {
+            if (state.transactionContext == null) {
                 throw new JMSException(
                         "'commit' is only valid when the consumer is configured with ackMode: SESSION_TRANSACTED");
             }
-            state.session.commit();
+            state.transactionContext.commitSession();
             return null;
         });
     }
 
     public static Object rollback(BObject bConsumer) {
-        BError notAllowed = checkExplicitSettlementAllowed(bConsumer, "roll back");
-        if (notAllowed != null) {
-            return notAllowed;
-        }
-        return execute(bConsumer, "rollback transaction", state -> {
-            if (!state.transacted) {
+        return settleExplicitly(bConsumer, "roll back", "rollback transaction", state -> {
+            if (state.transactionContext == null) {
                 throw new JMSException(
                         "'rollback' is only valid when the consumer is configured with ackMode: SESSION_TRANSACTED");
             }
-            state.session.rollback();
+            state.transactionContext.rollbackSession();
             return null;
         });
     }
@@ -238,8 +233,8 @@ public final class Actions {
                 () -> action.run(state));
     }
 
-    /** Joins a transacted consumer's session to the caller's transaction, or rejects a non-transacted one. */
-    private static Object joinTransaction(BObject bConsumer) {
+    /** Joins the caller's transaction, or returns an error if the consumer can't. */
+    private static Object joinTransaction(BObject bConsumer, BMap<BString, Object> message) {
         ConsumerState state = (ConsumerState) bConsumer.getNativeData(NATIVE_STATE);
         if (state == null) {
             return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is not initialized");
@@ -252,14 +247,26 @@ public final class Actions {
                     + "transacted. Create the consumer with `ackMode: SESSION_TRANSACTED` to acknowledge in a "
                     + "transaction.");
         }
+        if (message.getNativeData(NATIVE_STATE) instanceof ConsumerState receiver && receiver != state) {
+            return createError(ACTIVEMQ_ERROR, "Cannot acknowledge a message that was received by another consumer. "
+                    + "Acknowledge it with the consumer that received it.");
+        }
         return state.transactionContext.joinCurrentTransaction();
     }
 
-    private static BError checkExplicitSettlementAllowed(BObject bConsumer, String operation) {
+    private static Object settleExplicitly(BObject bConsumer, String verb, String operation, JmsAction action) {
         ConsumerState state = (ConsumerState) bConsumer.getNativeData(NATIVE_STATE);
         if (state == null || state.transactionContext == null) {
-            return null;
+            return execute(bConsumer, operation, action);
         }
-        return state.transactionContext.checkExplicitSettlementAllowed(operation);
+        BError notAllowed = state.transactionContext.beginExplicitSettlement(verb);
+        if (notAllowed != null) {
+            return notAllowed;
+        }
+        try {
+            return execute(bConsumer, operation, action);
+        } finally {
+            state.transactionContext.endOutsideCall();
+        }
     }
 }

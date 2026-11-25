@@ -19,124 +19,144 @@
 package io.ballerina.lib.activemq.util;
 
 import io.ballerina.runtime.api.values.BError;
-import io.ballerina.runtime.transactions.BallerinaTransactionContext;
-import io.ballerina.runtime.transactions.TransactionLocalContext;
 import io.ballerina.runtime.transactions.TransactionResourceManager;
 import jakarta.jms.JMSException;
 import jakarta.jms.Session;
 
-import java.util.UUID;
-
-import javax.transaction.xa.XAResource;
-
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 
-/**
- * Lets a transacted JMS session take part in a Ballerina {@code transaction} block.
- * <p>
- * Used by transacted producers, pull consumers and listener services. The first call inside a block that joins
- * the session (a producer's {@code send}, or a consumer's or caller's {@code acknowledge}) registers this context
- * with the current transaction. When the block commits or rolls back, the Ballerina runtime calls
- * {@link #commit()} or {@link #rollback()}, which commit or roll back the session. A JMS commit or rollback covers
- * everything the session has sent or received since its last commit or rollback. The session isn't an XA
- * resource, so the commit isn't atomic with other resources in the same block.
- */
-public final class SessionTransactionContext implements BallerinaTransactionContext {
+/** Lets a transacted JMS session join a Ballerina {@code transaction} block. The block settles it. */
+public final class SessionTransactionContext {
 
-    private final String connectorId = UUID.randomUUID().toString();
     private final Session session;
     private final Object sessionLock;
     private final String resourceName;
-    // The transaction the session currently belongs to, or null. Guarded by this.
+    private final boolean receives;
+    // The transaction using the session, or null. Guarded by this.
     private String activeTransactionId;
+    // Calls using the session outside a transaction. Guarded by this.
+    private int outsideCalls = 0;
 
     /**
      * @param session      the transacted JMS session
-     * @param sessionLock  the lock that guards the session against concurrent use
-     * @param resourceName the resource that owns the session, used in error messages, e.g. {@code "producer"}
+     * @param sessionLock  the lock that guards the session
+     * @param resourceName the name used in error messages, e.g. {@code "producer"}
+     * @param receives     whether the session receives messages
      */
-    public SessionTransactionContext(Session session, Object sessionLock, String resourceName) {
+    public SessionTransactionContext(Session session, Object sessionLock, String resourceName, boolean receives) {
         this.session = session;
         this.sessionLock = sessionLock;
         this.resourceName = resourceName;
+        this.receives = receives;
     }
 
     /**
-     * Registers this context with the caller's current transaction, if it isn't registered yet. Must be called on
-     * the calling strand, inside a transaction.
+     * Joins the caller's transaction. Must be called on the calling strand.
      *
-     * @return a {@code BError} if the session already belongs to a different open transaction, or null
+     * @return an error if the session is in use elsewhere, or null
      */
-    public BError joinCurrentTransaction() {
-        TransactionResourceManager manager = TransactionResourceManager.getInstance();
-        TransactionLocalContext localContext = manager.getCurrentTransactionContext();
-        String globalId = localContext.getGlobalTransactionId();
-        String blockId = localContext.getCurrentTransactionBlockId();
-        String transactionId = globalId + ":" + blockId;
-        synchronized (this) {
-            if (activeTransactionId != null && !activeTransactionId.equals(transactionId)) {
-                return createError(ACTIVEMQ_ERROR, "The " + resourceName + " is already part of another "
-                        + "transaction. Use a separate " + resourceName + " for each transaction that runs at the "
-                        + "same time.");
-            }
-            if (localContext.getTransactionContext(connectorId) == null) {
-                localContext.registerTransactionContext(connectorId, this);
-                manager.register(globalId, blockId, this);
-                activeTransactionId = transactionId;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Rejects an explicit commit or rollback made inside a transaction block, or while the session belongs to one,
-     * because the block's own commit or rollback settles the session. The session may not have joined the block
-     * yet; an explicit commit then would still settle its work in the middle of the block. Must be called on the
-     * calling strand.
-     *
-     * @param operation the explicit operation, {@code "commit"} or {@code "roll back"}
-     * @return a {@code BError} if the call is inside a transaction or the session belongs to one, or null
-     */
-    public synchronized BError checkExplicitSettlementAllowed(String operation) {
-        if (activeTransactionId == null && !TransactionResourceManager.getInstance().isInTransaction()) {
+    public synchronized BError joinCurrentTransaction() {
+        String transactionId = TransactionBlock.currentTransactionId();
+        if (transactionId.equals(activeTransactionId)) {
             return null;
         }
-        return createError(ACTIVEMQ_ERROR, "Cannot " + operation + " explicitly inside a transaction block or "
-                + "while the " + resourceName + " is part of one. The block's commit or rollback settles it.");
-    }
-
-    @Override
-    public void commit() {
-        synchronized (sessionLock) {
-            try {
-                session.commit();
-            } catch (JMSException e) {
-                throw createError(ACTIVEMQ_ERROR, "Failed to commit the transaction: " + e.getMessage(), e);
-            }
+        if (activeTransactionId != null) {
+            return createError(ACTIVEMQ_ERROR, "The " + resourceName + " is already part of another "
+                    + "transaction. Use a separate " + resourceName + " for each transaction that runs at the "
+                    + "same time.");
         }
-    }
-
-    @Override
-    public void rollback() {
-        synchronized (sessionLock) {
-            try {
-                session.rollback();
-            } catch (JMSException e) {
-                throw createError(ACTIVEMQ_ERROR, "Failed to roll back the transaction: " + e.getMessage(), e);
-            }
+        if (outsideCalls > 0) {
+            return createError(ACTIVEMQ_ERROR, "The " + resourceName + " is being used outside the transaction at "
+                    + "the same time. Use a separate " + resourceName + " for the transaction.");
         }
-    }
-
-    @Override
-    public void close() {
-        synchronized (this) {
-            activeTransactionId = null;
-        }
-    }
-
-    @Override
-    public XAResource getXAResource() {
+        TransactionBlock.joinCurrent(this);
+        activeTransactionId = transactionId;
         return null;
+    }
+
+    /**
+     * Starts an explicit commit or rollback. Must be called on the calling strand, and followed by
+     * {@link #endOutsideCall()} if it succeeds.
+     *
+     * @param operation {@code "commit"} or {@code "roll back"}
+     * @return an error inside a transaction or while one is using the session, or null
+     */
+    public synchronized BError beginExplicitSettlement(String operation) {
+        if (activeTransactionId != null || TransactionResourceManager.getInstance().isInTransaction()) {
+            return createError(ACTIVEMQ_ERROR, "Cannot " + operation + " explicitly inside a transaction block or "
+                    + "while the " + resourceName + " is part of one. The block's commit or rollback settles it.");
+        }
+        outsideCalls++;
+        return null;
+    }
+
+    /**
+     * Starts a receive outside a transaction. Must be followed by {@link #endOutsideCall()} if it succeeds.
+     *
+     * @return an error while a transaction is using the session, or null
+     */
+    public synchronized BError beginOutsideReceive() {
+        if (activeTransactionId != null) {
+            return createError(ACTIVEMQ_ERROR, "Cannot receive outside a transaction while the " + resourceName
+                    + " is part of one. Use a separate " + resourceName + ".");
+        }
+        outsideCalls++;
+        return null;
+    }
+
+    /** Ends a call started by {@link #beginExplicitSettlement} or {@link #beginOutsideReceive}. */
+    public synchronized void endOutsideCall() {
+        outsideCalls--;
+    }
+
+    /**
+     * Rolls back the session, unless a transaction is using it.
+     *
+     * @throws JMSException if the rollback fails
+     */
+    public void rollbackUnsettled() throws JMSException {
+        synchronized (this) {
+            if (activeTransactionId != null) {
+                return;
+            }
+            outsideCalls++;
+        }
+        try {
+            rollbackSession();
+        } finally {
+            endOutsideCall();
+        }
+    }
+
+    /**
+     * Commits the session.
+     *
+     * @throws JMSException if the commit fails
+     */
+    public void commitSession() throws JMSException {
+        synchronized (sessionLock) {
+            session.commit();
+        }
+    }
+
+    /**
+     * Rolls back the session.
+     *
+     * @throws JMSException if the rollback fails
+     */
+    public void rollbackSession() throws JMSException {
+        synchronized (sessionLock) {
+            session.rollback();
+        }
+    }
+
+    boolean receives() {
+        return receives;
+    }
+
+    /** Lets the session join another transaction. */
+    synchronized void leaveTransaction() {
+        activeTransactionId = null;
     }
 }

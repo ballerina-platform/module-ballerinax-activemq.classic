@@ -54,8 +54,7 @@ public class MessageDispatcher {
     private final Runtime ballerinaRuntime;
     private final Service nativeService;
     private final Session session;
-    // Shared by every caller of this service, so the service's session joins at most one transaction at a time.
-    // Non-null only for a transacted session.
+    // Shared by the service's callers. Non-null only for a transacted session.
     private final SessionTransactionContext transactionContext;
     private final OnErrorCallback onErrorCallback = new OnErrorCallback();
 
@@ -72,7 +71,7 @@ public class MessageDispatcher {
         this.nativeService = nativeService;
         this.session = session;
         this.transactionContext = transacted
-                ? new SessionTransactionContext(session, new Object(), "service's session") : null;
+                ? new SessionTransactionContext(session, new Object(), "service's session", true) : null;
     }
 
     /** Associates this dispatcher with its MessageReceiver, so a failing onError handler can stop delivery. */
@@ -80,7 +79,10 @@ public class MessageDispatcher {
         this.onErrorCallback.setReceiver(receiver);
     }
 
-    /** Dispatches a JMS message to onMessage; a returned error goes to onError, a panic is only logged. */
+    /**
+     * Dispatches a message to onMessage. A returned error goes to onError and a panic is logged; a transacted
+     * session is rolled back in both cases.
+     */
     public void onMessage(Message message) {
         try {
             boolean isConcurrentSafe = nativeService.isOnMessageMethodIsolated();
@@ -89,9 +91,11 @@ public class MessageDispatcher {
             Object result = ballerinaRuntime.callMethod(
                     nativeService.getConsumerService(), ON_MESSAGE_METHOD, metadata, params);
             if (result instanceof BError bError) {
+                rollbackFailedDelivery();
                 onError(bError);
             }
         } catch (BError bError) {
+            rollbackFailedDelivery();
             bError.printStackTrace();
         } catch (JMSException | ActiveMQDatabindingException e) {
             undoDelivery();
@@ -107,11 +111,23 @@ public class MessageDispatcher {
      */
     private void undoDelivery() {
         try {
-            if (session.getTransacted()) {
-                session.rollback();
+            if (transactionContext != null) {
+                transactionContext.rollbackUnsettled();
             } else if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
                 session.recover();
             }
+        } catch (JMSException e) {
+            ERR_OUT.println("Failed to roll back the message after a processing failure: " + e.getMessage());
+        }
+    }
+
+    /** Rolls back a transacted session after onMessage fails, so the next commit doesn't acknowledge the message. */
+    private void rollbackFailedDelivery() {
+        if (transactionContext == null) {
+            return;
+        }
+        try {
+            transactionContext.rollbackUnsettled();
         } catch (JMSException e) {
             ERR_OUT.println("Failed to roll back the message after a processing failure: " + e.getMessage());
         }

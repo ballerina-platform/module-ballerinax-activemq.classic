@@ -16,34 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already worked. A plain `classic:Message` parameter keeps its existing behavior unchanged. A
   payload that can't be converted to the requested type is routed to `onError` instead of being
   silently dropped.
+- Added support for Ballerina `transaction` blocks in producers (`transacted: true`), and in consumers and
+  `Listener` services (`SESSION_TRANSACTED`).
 
 ### Changed
-- A `MessageProducer` created with `transacted: true` now takes part in Ballerina `transaction`
-  blocks: its sends are delivered when the block commits and discarded when the block rolls back
-  or fails. `send()` returns an error if a transacted producer sends outside a `transaction`
-  block, if a producer that isn't transacted sends inside one, or if the producer is already part
-  of another transaction running at the same time.
-- A `Listener` service with `sessionAckMode: SESSION_TRANSACTED` can now take part in Ballerina
-  `transaction` blocks: calling `caller->acknowledge()` inside a block joins the service's session
-  to it, so the block's commit acknowledges the session's received messages and its rollback has
-  them redelivered. Outside a block, `caller->'commit()` and `caller->'rollback()` work as before.
-  `caller->acknowledge()` returns an error inside a block if the session isn't transacted, and
-  `caller->'commit()`/`caller->'rollback()` return an error inside a block or while the session
-  is part of one. Call `caller->acknowledge()` first in the block, so a later failure rolls the
-  message back.
-- A `MessageConsumer` with `ackMode: SESSION_TRANSACTED` can now take part in Ballerina
-  `transaction` blocks the same way: calling `consumer->receive()`, `consumer->receiveNoWait()`
-  or `consumer->acknowledge()` inside a block joins the consumer's session to it, so a failure
-  anywhere after the receive rolls the message back. Outside a block, `consumer->'commit()` and
-  `consumer->'rollback()` work as before. `consumer->acknowledge()` returns an error inside a
-  block if the consumer isn't transacted, and `consumer->'commit()`/`consumer->'rollback()`
-  return an error inside a block or while the consumer is part of one.
 - Moved the test-only `TestProducer` native helper out of the released `activemq.classic-native` jar into a
   separate `testOnly`-scoped jar, so test utilities no longer ship in the production artifact.
 
 ### Removed
-- Removed `MessageProducer.'commit()` and `MessageProducer.'rollback()`. A transacted producer
-  commits and rolls back with the surrounding `transaction` block instead.
 - Removed the unused, auto-generated `gradle/libs.versions.toml` stub.
 
 ### Fixed

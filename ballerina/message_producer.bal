@@ -54,8 +54,8 @@ public isolated client class MessageProducer {
     # check producer->send(message, {topicName: "order.events"});
     # ```
     #
-    # A producer created with `transacted = true` must send inside a Ballerina `transaction`
-    # block. Its messages are delivered when the block commits and discarded when it rolls back.
+    # A transacted producer must send inside a `transaction` block. Messages are delivered on
+    # commit and discarded on rollback.
     #
     # ```ballerina
     # transaction {
@@ -68,8 +68,8 @@ public isolated client class MessageProducer {
     # + destination - The destination to send to for this call, overriding the producer's
     #                 configured default destination, if any
     # + return - `classic:Error` if sending fails, if a transacted producer sends outside a
-    #            `transaction` block, if a producer that isn't transacted sends inside one, or if
-    #            the producer is already part of another transaction; `()` otherwise
+    #            `transaction` block or another producer sends inside one, or if the producer is in
+    #            another transaction; `()` otherwise
     isolated remote function send(Message message, Destination? destination = ()) returns Error? {
         check validateMessage(message);
         return self.externSend(message, destination);

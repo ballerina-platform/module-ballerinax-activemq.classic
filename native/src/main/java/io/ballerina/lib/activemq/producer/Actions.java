@@ -63,7 +63,7 @@ public final class Actions {
             this.producer = producer;
             this.defaultDestination = defaultDestination;
             this.transactionContext = transacted
-                    ? new SessionTransactionContext(session, sessionLock, "producer") : null;
+                    ? new SessionTransactionContext(session, sessionLock, "producer", false) : null;
         }
     }
 
@@ -93,7 +93,7 @@ public final class Actions {
     public static Object send(BObject bProducer, BMap<BString, Object> bMessage, Object destinationObj) {
         ProducerState producerState = (ProducerState) bProducer.getNativeData(NATIVE_STATE);
         if (producerState != null && !producerState.closed) {
-            // Must run here, on the calling strand: the transaction state belongs to that strand.
+            // Must run on the calling strand.
             BError transactionError = joinTransactionIfAny(producerState);
             if (transactionError != null) {
                 return transactionError;
@@ -114,11 +114,7 @@ public final class Actions {
         });
     }
 
-    /**
-     * Checks a send against the caller's transaction state. A transacted producer must send inside a Ballerina
-     * {@code transaction} block, and joins that transaction on its first send. A producer that isn't transacted
-     * can't send inside a block, because its sends couldn't be rolled back with it.
-     */
+    /** Joins the caller's transaction. A producer must be transacted inside one, and not transacted outside. */
     private static BError joinTransactionIfAny(ProducerState state) {
         boolean inTransaction = TransactionResourceManager.getInstance().isInTransaction();
         SessionTransactionContext transactionContext = state.transactionContext;

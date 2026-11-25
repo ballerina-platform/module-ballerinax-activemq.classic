@@ -170,67 +170,39 @@ check producer->send({
 }, {topicName: "order.events"});
 ```
 
-### 7. Transactional sends
+### 7. Transactions
 
-Configure the producer with `transacted: true`, then send inside a Ballerina `transaction`
-block. The sends are delivered together when the block commits:
+Producers, listeners and consumers can take part in a Ballerina `transaction` block.
+
+**Producer.** Set `transacted` to `true` and send inside a block. Messages are delivered on commit and
+discarded on rollback.
 
 ```ballerina
 classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
 transaction {
-    check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
-    check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
-    check commit;   // both messages are delivered together
+    check producer->send({payload: "order A".toBytes()}, {queueName: "orders.queue"});
+    check producer->send({payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+    check commit;
 }
-check producer->close();
 ```
 
-If the block rolls back, or fails with an error, the sends are discarded. Several transacted
-producers in the same block roll back together, and `retry transaction` resends only the
-attempt that commits. The producer's session isn't an XA resource, so the commit isn't atomic
-with other resources, such as a database, in the same block.
-
-`send()` returns a `classic:Error` if:
-- a transacted producer sends outside a `transaction` block;
-- a producer that isn't transacted sends inside one;
-- the producer is already part of another transaction running at the same time. Use a
-  separate producer for each transaction that runs concurrently.
-
-A `Listener` service with `sessionAckMode: SESSION_TRANSACTED` can take part in the same block.
-Calling `caller->acknowledge(message)` inside the block joins the service's session to it:
+**Listener.** Use `sessionAckMode: SESSION_TRANSACTED` and call `acknowledge()` first in the block.
+Nothing is settled until the block commits.
 
 ```ballerina
 remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
     transaction {
-        check caller->acknowledge(message);   // join first, before any work that can fail
+        check caller->acknowledge(message);
         check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
-        check commit;   // both sessions commit; the commits aren't atomic with each other
+        check commit;
     }
 }
 ```
 
-**Acknowledge first.** In a transacted session, `acknowledge()` doesn't settle anything until the
-block commits, so calling it at the start of the block is safe. If you call it later and the block
-fails before reaching it, the service's session never joined the block, so the block's rollback
-doesn't cover the message. The message then stays unsettled in the session, and the next commit
-on that session acknowledges it without it having been processed.
+If `onMessage` returns an error or panics, unsettled messages are redelivered. If you catch the error,
+roll back yourself, or the next commit acknowledges the message.
 
-When the block commits, every message the service's session has received since its last commit
-or rollback is acknowledged, not just the one passed to `acknowledge()`. That includes earlier
-messages that a previous `onMessage` call left unsettled. When the block rolls back or fails,
-those messages are redelivered under the redelivery policy. Outside a block,
-`caller->'commit()` and `caller->'rollback()` work as before.
-
-`caller->acknowledge()` returns a `classic:Error` inside a `transaction` block if the service's
-session isn't transacted, because that acknowledgement couldn't be rolled back with the block.
-`caller->'commit()` and `caller->'rollback()` return a `classic:Error` when called inside a
-`transaction` block, or while the session is part of one, because the block's own commit or
-rollback settles it.
-
-A `MessageConsumer` created with `ackMode: SESSION_TRANSACTED` joins a block when it calls
-`consumer->receive()`, `consumer->receiveNoWait()` or `consumer->acknowledge(message)` inside it.
-Because receiving joins, a failure anywhere after the receive rolls the message back with the
-block, and it is redelivered.
+**Consumer.** Use `ackMode: SESSION_TRANSACTED`. Receiving or acknowledging inside a block joins it.
 
 ```ballerina
 classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
@@ -239,34 +211,25 @@ transaction {
     classic:Message? message = check consumer->receive(5000);
     if message is classic:Message {
         check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
-        check consumer->acknowledge(message);
     }
-    check commit;   // both sessions commit; the commits aren't atomic with each other
+    check commit;
 }
 ```
 
-The same rules apply: `consumer->acknowledge()` returns an error inside a block if the consumer
-isn't transacted, and `consumer->'commit()`/`consumer->'rollback()` return an error when called
-inside a block or while the consumer is part of one. Outside a block, they work as before.
+Good to know:
+- A commit or rollback covers everything the session has received since its last one, including
+  messages received before the block.
+- Producers commit first. If one fails, the rest roll back and the messages are redelivered.
+- Commits aren't atomic across sessions or with a database, so handle duplicates.
+- Outside a block, transacted listeners and consumers settle with `'commit()` and `'rollback()`.
 
-A JMS transaction belongs to the session, not to the block, so the block covers every message the
-session has received since its last commit or rollback:
-- A message received *before* the block is acknowledged when the block commits, and redelivered
-  when it rolls back, once the consumer has joined the block:
-
-  ```ballerina
-  classic:Message? message = check consumer->receive(5000);
-  if message is classic:Message {
-      transaction {
-          check consumer->acknowledge(message);   // also covers anything else received earlier
-          check commit;
-      }
-  }
-  ```
-- Receiving another message inside the block doesn't start a separate transaction: it joins the
-  same session transaction as the messages received before it.
-- On a consumer that isn't transacted, `receive()` inside a block isn't part of the block. Its
-  messages are acknowledged as usual for its `ackMode`, whether or not the block commits.
+These return a `classic:Error`:
+- sending outside a block with a transacted producer;
+- sending or acknowledging inside a block without a transacted session;
+- calling `'commit()` or `'rollback()` inside a block;
+- acknowledging another consumer's message inside a block;
+- using the same producer or consumer in two blocks at once, or a consumer inside and outside a block at
+  once.
 
 ### 8. SSL / TLS connection
 

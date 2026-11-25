@@ -41,69 +41,42 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 public class Caller {
     static final String NATIVE_MESSAGE = "native.message";
     static final String NATIVE_SESSION = "native.session";
-    // Set only for a service whose session is transacted.
+    // Set only for a transacted session.
     static final String NATIVE_TRANSACTION_CONTEXT = "native.transaction.context";
 
     private Caller() {
     }
 
     /**
-     * Commits the current transaction for the JMS session. Refused while the session is part of a Ballerina
-     * transaction block, which settles it instead.
+     * Commits the JMS session. Not allowed while a Ballerina transaction is using it.
      *
      * @param caller  the Ballerina caller object
      * @return null on success, BError on failure
      */
     public static Object commit(BObject caller) {
-        BError notAllowed = checkExplicitSettlementAllowed(caller, "commit");
-        if (notAllowed != null) {
-            return notAllowed;
-        }
-        Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
-        try {
-            nativeSession.commit();
-        } catch (JMSException exception) {
-            return createError("Error",
-                    String.format("Error while committing the transaction: %s", exception.getMessage()), exception);
-        }
-        return null;
+        return settleExplicitly(caller, "commit", "Error while committing the transaction: ", Session::commit);
     }
 
     /**
-     * Rolls back the current transaction for the JMS session. Refused while the session is part of a Ballerina
-     * transaction block, which settles it instead.
+     * Rolls back the JMS session. Not allowed while a Ballerina transaction is using it.
      *
      * @param caller  the Ballerina caller object
      * @return null on success, BError on failure
      */
     public static Object rollback(BObject caller) {
-        BError notAllowed = checkExplicitSettlementAllowed(caller, "roll back");
-        if (notAllowed != null) {
-            return notAllowed;
-        }
-        Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
-        try {
-            nativeSession.rollback();
-        } catch (JMSException exception) {
-            return createError("Error",
-                    String.format("Error while rolling back the transaction: %s", exception.getMessage()),
-                    exception);
-        }
-        return null;
+        return settleExplicitly(caller, "roll back", "Error while rolling back the transaction: ",
+                Session::rollback);
     }
 
     /**
-     * Acknowledges a JMS message. Inside a Ballerina transaction block, a transacted service's session joins the
-     * block instead: the block's commit acknowledges every message the session has received, and its rollback
-     * has them redelivered. A service whose session isn't transacted can't acknowledge inside a block, because
-     * the acknowledgement couldn't be rolled back with it.
+     * Acknowledges a message. Inside a transaction, the session joins it and the commit acknowledges.
      *
      * @param caller   the Ballerina caller object
      * @param message  the Ballerina message record
      * @return null on success, BError on failure
      */
     public static Object acknowledge(BObject caller, BMap<BString, Object> message) {
-        // Must run here, on the calling strand: the transaction state belongs to that strand.
+        // Must run on the calling strand.
         if (TransactionResourceManager.getInstance().isInTransaction()) {
             SessionTransactionContext transactionContext =
                     (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
@@ -127,9 +100,31 @@ public class Caller {
         return null;
     }
 
-    private static BError checkExplicitSettlementAllowed(BObject caller, String operation) {
+    @FunctionalInterface
+    private interface Settlement {
+        void run(Session session) throws JMSException;
+    }
+
+    private static Object settleExplicitly(BObject caller, String verb, String errorPrefix, Settlement settlement) {
+        Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
         SessionTransactionContext transactionContext =
                 (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
-        return transactionContext == null ? null : transactionContext.checkExplicitSettlementAllowed(operation);
+        // Null if the session isn't transacted. The JMS client then rejects the call.
+        if (transactionContext != null) {
+            BError notAllowed = transactionContext.beginExplicitSettlement(verb);
+            if (notAllowed != null) {
+                return notAllowed;
+            }
+        }
+        try {
+            settlement.run(nativeSession);
+        } catch (JMSException exception) {
+            return createError("Error", errorPrefix + exception.getMessage(), exception);
+        } finally {
+            if (transactionContext != null) {
+                transactionContext.endOutsideCall();
+            }
+        }
+        return null;
     }
 }

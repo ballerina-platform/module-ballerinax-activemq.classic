@@ -410,3 +410,134 @@ function testListenerExplicitCommitBeforeJoiningReturnsError() returns error? {
     }
     test:assertEquals(check receiveTexts(queueName), [], "the block's commit should still acknowledge it");
 }
+
+isolated string[] lstErrorPayloads = [];
+
+@test:Config {
+    groups: ["transaction", "listener-transaction"]
+}
+function testListenerErrorBeforeAcknowledgeRedelivers() returns error? {
+    string queueName = "tx.listener.errorbeforeack.queue";
+    check drainQueue(queueName);
+    Listener txListener = check new (BROKER_URL);
+    Service svc = @ServiceConfig {
+        queueName: "tx.listener.errorbeforeack.queue",
+        sessionAckMode: SESSION_TRANSACTED,
+        redeliveryPolicy: {maximumRedeliveries: 5, initialRedeliveryDelay: 200, redeliveryDelay: 200}
+    } service object {
+        remote function onMessage(record {|*Message; string payload;|} message, Caller caller) returns error? {
+            boolean isFirstDelivery;
+            lock {
+                isFirstDelivery = lstErrorPayloads.length() == 0;
+                lstErrorPayloads.push(message.payload);
+            }
+            transaction {
+                if isFirstDelivery {
+                    // The session hasn't joined the block, so the block's rollback doesn't cover the message.
+                    check failStep();
+                }
+                check caller->acknowledge(message);
+                check commit;
+            }
+        }
+    };
+    check txListener.attach(svc);
+    check txListener.'start();
+
+    check sendToQueue(BROKER_URL, queueName, "first");
+    check sendToQueue(BROKER_URL, queueName, "second");
+    waitUntil(isolated function () returns boolean {
+        lock {
+            return lstErrorPayloads.length() >= 3;
+        }
+    });
+    runtime:sleep(1);
+    check txListener.gracefulStop();
+
+    lock {
+        test:assertEquals(lstErrorPayloads, ["first", "first", "second"],
+                "a message whose onMessage failed should be redelivered, not acknowledged with the next one");
+    }
+    test:assertEquals(check receiveTexts(queueName), [], "both messages should be acknowledged in the end");
+}
+
+isolated int lstPanicDeliveries = 0;
+
+@test:Config {
+    groups: ["transaction", "listener-transaction"]
+}
+function testListenerPanicBeforeSettlingRedelivers() returns error? {
+    string queueName = "tx.listener.panic.queue";
+    check drainQueue(queueName);
+    Listener txListener = check new (BROKER_URL);
+    Service svc = @ServiceConfig {
+        queueName: "tx.listener.panic.queue",
+        sessionAckMode: SESSION_TRANSACTED,
+        redeliveryPolicy: {maximumRedeliveries: 5, initialRedeliveryDelay: 200, redeliveryDelay: 200}
+    } service object {
+        remote function onMessage(Message message, Caller caller) returns error? {
+            int delivery;
+            lock {
+                lstPanicDeliveries += 1;
+                delivery = lstPanicDeliveries;
+            }
+            if delivery == 1 {
+                panic error("simulated panic");
+            }
+            check caller->'commit();
+        }
+    };
+    check txListener.attach(svc);
+    check txListener.'start();
+
+    check sendToQueue(BROKER_URL, queueName, "panic-once");
+    waitUntil(isolated function () returns boolean {
+        lock {
+            return lstPanicDeliveries >= 2;
+        }
+    });
+    runtime:sleep(1);
+    check txListener.gracefulStop();
+
+    lock {
+        test:assertEquals(lstPanicDeliveries, 2, "a message whose onMessage panicked should be redelivered");
+    }
+    test:assertEquals(check receiveTexts(queueName), [], "the second delivery should commit the message");
+}
+
+isolated int lstErrorAfterCommitDeliveries = 0;
+
+@test:Config {
+    groups: ["transaction", "listener-transaction"]
+}
+function testListenerErrorAfterCommitDoesNotRedeliver() returns error? {
+    string queueName = "tx.listener.erroraftercommit.queue";
+    check drainQueue(queueName);
+    Listener txListener = check new (BROKER_URL);
+    Service svc = @ServiceConfig {
+        queueName: "tx.listener.erroraftercommit.queue",
+        sessionAckMode: SESSION_TRANSACTED
+    } service object {
+        remote function onMessage(Message message, Caller caller) returns error? {
+            lock {
+                lstErrorAfterCommitDeliveries += 1;
+            }
+            transaction {
+                check caller->acknowledge(message);
+                check commit;
+            }
+            check failStep();
+        }
+    };
+    check txListener.attach(svc);
+    check txListener.'start();
+
+    check sendToQueue(BROKER_URL, queueName, "committed");
+    runtime:sleep(3);
+    check txListener.gracefulStop();
+
+    lock {
+        test:assertEquals(lstErrorAfterCommitDeliveries, 1, "a committed message must not be redelivered");
+    }
+    test:assertEquals(check receiveTexts(queueName), [], "the message should stay acknowledged");
+}

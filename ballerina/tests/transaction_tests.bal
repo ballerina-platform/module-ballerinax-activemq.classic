@@ -502,3 +502,72 @@ function testSeparateProducersInConcurrentTransactionsCommitIndependently() retu
     test:assertEquals(early.payload, "from-second");
     test:assertEquals(check receiveTexts(queueName), ["from-first"]);
 }
+
+// ---- One session failing to commit or roll back ----
+
+// Sends with both producers, then closes the first one so that its session can't commit or roll back.
+function sendThenCloseFirst(MessageProducer first, MessageProducer second, boolean failBlock) returns error? {
+    transaction {
+        check first->send({payload: "first"});
+        check second->send({payload: "second"});
+        check first->close();
+        if failBlock {
+            check failStep();
+        }
+        check commit;
+    }
+}
+
+@test:Config {
+    groups: ["transaction", "producer-transaction"]
+}
+function testFailedCommitRollsBackOtherProducers() returns error? {
+    string firstQueue = "tx.block.commitfailure.first.queue";
+    string secondQueue = "tx.block.commitfailure.second.queue";
+    check drainQueue(firstQueue);
+    check drainQueue(secondQueue);
+    MessageProducer first = check new (BROKER_URL, transacted = true, destination = {queueName: firstQueue});
+    MessageProducer second = check new (BROKER_URL, transacted = true, destination = {queueName: secondQueue});
+
+    // Older runtimes raise a commit failure as a panic, so it runs on its own strand.
+    future<error?> block = start sendThenCloseFirst(first, second, false);
+    error? blockError = trap wait block;
+    transaction {
+        check second->send({payload: "later"});
+        check commit;
+    }
+    check second->close();
+
+    test:assertTrue(blockError is error, "the block should fail when a session can't commit");
+    test:assertEquals(check receiveTexts(firstQueue), [], "closing a producer should discard its uncommitted sends");
+    test:assertEquals(check receiveTexts(secondQueue), ["later"],
+            "the other producer should be rolled back and able to join a later block");
+}
+
+@test:Config {
+    groups: ["transaction", "producer-transaction"]
+}
+function testFailedRollbackStillRollsBackOtherProducers() returns error? {
+    string firstQueue = "tx.block.rollbackfailure.first.queue";
+    string secondQueue = "tx.block.rollbackfailure.second.queue";
+    check drainQueue(firstQueue);
+    check drainQueue(secondQueue);
+    MessageProducer first = check new (BROKER_URL, transacted = true, destination = {queueName: firstQueue});
+    MessageProducer second = check new (BROKER_URL, transacted = true, destination = {queueName: secondQueue});
+
+    future<error?> block = start sendThenCloseFirst(first, second, true);
+    error? blockError = trap wait block;
+    transaction {
+        check second->send({payload: "later"});
+        check commit;
+    }
+    check second->close();
+
+    if blockError is () {
+        test:assertFail("the block should fail");
+    }
+    test:assertEquals(blockError.message(), "simulated failure",
+            "a rollback failure must not hide the error that failed the block");
+    test:assertEquals(check receiveTexts(secondQueue), ["later"],
+            "the other producer should be rolled back and able to join a later block");
+}

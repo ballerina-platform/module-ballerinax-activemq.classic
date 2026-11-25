@@ -390,3 +390,170 @@ function testConsumerExplicitCommitBeforeJoiningReturnsError() returns error? {
             "unexpected error message: " + explicitRollback.message());
     test:assertEquals(check receiveTexts(queueName), [], "the explicit commit outside the block should settle it");
 }
+
+// Receives and forwards one message, then closes the producer so that its session can't commit.
+function forwardThenCloseProducer(MessageConsumer consumer, MessageProducer producer) returns error? {
+    transaction {
+        TextMessage? msg = check consumer->receive(5000);
+        if msg is TextMessage {
+            check producer->send({payload: msg.payload});
+        }
+        check producer->close();
+        check commit;
+    }
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerMessageRedeliveredWhenProducerCommitFails() returns error? {
+    string inQueue = "tx.consumer.producerfailure.in.queue";
+    string outQueue = "tx.consumer.producerfailure.out.queue";
+    check drainQueue(inQueue);
+    check drainQueue(outQueue);
+    check sendToQueue(BROKER_URL, inQueue, "keep-me");
+    MessageConsumer consumer = check newTransactedConsumer(inQueue);
+    MessageProducer producer = check new (BROKER_URL, transacted = true, destination = {queueName: outQueue});
+
+    // The consumer joins the block first, but must not be committed before the producer.
+    future<error?> block = start forwardThenCloseProducer(consumer, producer);
+    error? blockError = trap wait block;
+    TextMessage? redelivered = ();
+    transaction {
+        redelivered = check consumer->receive(5000);
+        check commit;
+    }
+    check consumer->close();
+
+    test:assertTrue(blockError is error, "the block should fail when the producer can't commit");
+    if redelivered is () {
+        test:assertFail("the message must not be lost when its output can't be committed");
+    }
+    test:assertEquals(redelivered.payload, "keep-me");
+    test:assertEquals(check receiveTexts(outQueue), [], "the output must not be delivered");
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerAcknowledgeOfAnotherConsumersMessageReturnsError() returns error? {
+    string queueName = "tx.consumer.othermessage.queue";
+    check drainQueue(queueName);
+    check sendToQueue(BROKER_URL, queueName, "not-yours");
+    MessageConsumer receiver = check newTransactedConsumer(queueName);
+    MessageConsumer other = check newTransactedConsumer("tx.consumer.othermessage.other.queue");
+
+    TextMessage? received = check receiver->receive(5000);
+    if received is () {
+        test:assertFail("the message should be received");
+    }
+    Error? result = ();
+    transaction {
+        result = other->acknowledge(received);
+        check commit;
+    }
+    check receiver->close();
+    check other->close();
+
+    if result is () {
+        test:assertFail("a message must be acknowledged by the consumer that received it");
+    }
+    test:assertTrue(result.message().includes("received by another consumer"),
+            "unexpected error message: " + result.message());
+    test:assertEquals(check receiveTexts(queueName), ["not-yours"], "the message should stay unacknowledged");
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerReceiveOutsideBlockWhileInBlockReturnsError() returns error? {
+    string queueName = "tx.consumer.outsidereceive.queue";
+    check drainQueue(queueName);
+    check sendToQueue(BROKER_URL, queueName, "first");
+    check sendToQueue(BROKER_URL, queueName, "second");
+    MessageConsumer consumer = check newTransactedConsumer(queueName);
+
+    future<error?> slow = start acknowledgeInSlowTransaction(consumer, 3);
+    runtime:sleep(1);
+    TextMessage?|Error outside = consumer->receive(1000);
+    check wait slow;
+    check consumer->close();
+
+    if outside !is Error {
+        test:assertFail("another strand's block must not cover a message received outside it");
+    }
+    test:assertTrue(outside.message().includes("Cannot receive outside a transaction"),
+            "unexpected error message: " + outside.message());
+    test:assertEquals(check receiveTexts(queueName), ["second"], "the block should acknowledge only its message");
+}
+
+isolated function receiveOutsideBlock(MessageConsumer consumer, int timeoutMs) returns Error? {
+    TextMessage? _ = check consumer->receive(timeoutMs);
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerJoinWhileReceivingOutsideReturnsError() returns error? {
+    string queueName = "tx.consumer.joinwhilereceiving.queue";
+    check drainQueue(queueName);
+    MessageConsumer consumer = check newTransactedConsumer(queueName);
+
+    future<Error?> outside = start receiveOutsideBlock(consumer, 3000);
+    runtime:sleep(1);
+    Error? joinError = ();
+    transaction {
+        TextMessage?|Error inBlock = consumer->receive(1000);
+        if inBlock is Error {
+            joinError = inBlock;
+        }
+        check commit;
+    }
+    check wait outside;
+    // Once the outside receive has ended, the consumer can join a block.
+    check sendToQueue(BROKER_URL, queueName, "later");
+    TextMessage? later = ();
+    transaction {
+        later = check consumer->receive(5000);
+        check commit;
+    }
+    check consumer->close();
+
+    if joinError is () {
+        test:assertFail("a consumer must not join a block while another strand is receiving with it");
+    }
+    test:assertTrue(joinError.message().includes("being used outside the transaction"),
+            "unexpected error message: " + joinError.message());
+    test:assertTrue(later is TextMessage, "the consumer should join a later block");
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerReceiveNoWaitJoinsBlock() returns error? {
+    string queueName = "tx.consumer.nowait.queue";
+    check drainQueue(queueName);
+    check sendToQueue(BROKER_URL, queueName, "no-wait");
+    MessageConsumer consumer = check newTransactedConsumer(queueName);
+    // Gives the broker time to push the message into the consumer's prefetch buffer.
+    runtime:sleep(1);
+
+    TextMessage? first = ();
+    do {
+        transaction {
+            first = check consumer->receiveNoWait();
+            check failStep();
+            check commit;
+        }
+    } on fail {
+    }
+    TextMessage? redelivered = check consumer->receive(5000);
+    check consumer->'commit();
+    check consumer->close();
+
+    test:assertTrue(first is TextMessage, "the message should be received");
+    if redelivered is () {
+        test:assertFail("a message received with receiveNoWait() should be rolled back with the block");
+    }
+    test:assertEquals(redelivered.redelivered, true, "the message should be flagged as redelivered");
+}
