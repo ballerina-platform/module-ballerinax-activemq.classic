@@ -110,10 +110,9 @@ public class MessageDispatcher {
      * sessions the next commit/acknowledge would otherwise remove it.
      */
     private void undoDelivery() {
+        rollbackFailedDelivery();
         try {
-            if (transactionContext != null) {
-                transactionContext.rollbackUnsettled();
-            } else if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
+            if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
                 session.recover();
             }
         } catch (JMSException e) {

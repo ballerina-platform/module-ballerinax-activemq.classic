@@ -48,24 +48,25 @@ public class Caller {
     }
 
     /**
-     * Commits the JMS session. Not allowed while a Ballerina transaction is using it.
+     * Commits the JMS session. Not allowed inside a Ballerina transaction, or while one is using it.
      *
      * @param caller  the Ballerina caller object
      * @return null on success, BError on failure
      */
     public static Object commit(BObject caller) {
-        return settleExplicitly(caller, "commit", "Error while committing the transaction: ", Session::commit);
+        return settleExplicitly(caller, "commit", "Error while committing the transaction: ",
+                SessionTransactionContext::commitSession, Session::commit);
     }
 
     /**
-     * Rolls back the JMS session. Not allowed while a Ballerina transaction is using it.
+     * Rolls back the JMS session. Not allowed inside a Ballerina transaction, or while one is using it.
      *
      * @param caller  the Ballerina caller object
      * @return null on success, BError on failure
      */
     public static Object rollback(BObject caller) {
         return settleExplicitly(caller, "roll back", "Error while rolling back the transaction: ",
-                Session::rollback);
+                SessionTransactionContext::rollbackSession, Session::rollback);
     }
 
     /**
@@ -101,11 +102,13 @@ public class Caller {
     }
 
     @FunctionalInterface
-    private interface Settlement {
-        void run(Session session) throws JMSException;
+    private interface Settlement<T> {
+        void run(T target) throws JMSException;
     }
 
-    private static Object settleExplicitly(BObject caller, String verb, String errorPrefix, Settlement settlement) {
+    private static Object settleExplicitly(BObject caller, String verb, String errorPrefix,
+                                           Settlement<SessionTransactionContext> transacted,
+                                           Settlement<Session> nonTransacted) {
         Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
         SessionTransactionContext transactionContext =
                 (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
@@ -117,7 +120,11 @@ public class Caller {
             }
         }
         try {
-            settlement.run(nativeSession);
+            if (transactionContext != null) {
+                transacted.run(transactionContext);
+            } else {
+                nonTransacted.run(nativeSession);
+            }
         } catch (JMSException exception) {
             return createError("Error", errorPrefix + exception.getMessage(), exception);
         } finally {

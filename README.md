@@ -222,6 +222,7 @@ Good to know:
 - Producers commit first. If one fails, the rest roll back and the messages are redelivered.
 - Commits aren't atomic across sessions or with a database, so handle duplicates.
 - Outside a block, transacted listeners and consumers settle with `'commit()` and `'rollback()`.
+- `receive()` on a non-transacted consumer isn't part of the block.
 
 These return a `classic:Error`:
 - sending outside a block with a transacted producer;

@@ -62,7 +62,7 @@ public isolated client class MessageConsumer {
     #       unset to get the JMS-message-appropriate default representation
     # + return - The received message (as `T`), `()` on timeout, or `classic:Error` on failure,
     #            if the payload cannot be converted to the requested type, or if the consumer is
-    #            in another transaction
+    #            in use elsewhere
     isolated remote function receive(int timeoutMs = 5000,
             typedesc<Message> T = <>) returns T|Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
@@ -82,7 +82,7 @@ public isolated client class MessageConsumer {
     #       unset to get the JMS-message-appropriate default representation
     # + return - The received message (as `T`), `()` if none is available, or `classic:Error` on
     #            failure, if the payload cannot be converted to the requested type, or if the
-    #            consumer is in another transaction
+    #            consumer is in use elsewhere
     isolated remote function receiveNoWait(typedesc<Message> T = <>) returns T|Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
     } external;
@@ -119,8 +119,8 @@ public isolated client class MessageConsumer {
     } external;
 
     # Commits all messages received since the last commit or rollback. Only valid when the
-    # consumer is configured with `ackMode: SESSION_TRANSACTED`. Not allowed while a
-    # `transaction` block is using the consumer.
+    # consumer is configured with `ackMode: SESSION_TRANSACTED`. Not allowed inside a
+    # `transaction` block, or while one is using the consumer.
     #
     # ```ballerina
     # check consumer->'commit();
@@ -133,7 +133,7 @@ public isolated client class MessageConsumer {
 
     # Rolls back all messages received since the last commit, making them available for
     # redelivery. Only valid when the consumer is configured with `ackMode: SESSION_TRANSACTED`.
-    # Not allowed while a `transaction` block is using the consumer.
+    # Not allowed inside a `transaction` block, or while one is using the consumer.
     #
     # ```ballerina
     # check consumer->'rollback();

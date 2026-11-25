@@ -53,8 +53,8 @@ public isolated client class Caller {
 
     # Commits all messages received in this transacted session and releases any locks currently
     # held. This operation is only valid when using `SESSION_TRANSACTED` acknowledgement mode.
-    # After committing, a new transaction is automatically started. Not allowed while a `transaction`
-    # block is using the session.
+    # After committing, a new transaction is automatically started. Not allowed inside a `transaction`
+    # block, or while one is using the session.
     #
     # ```ballerina
     # check caller->'commit();
@@ -68,7 +68,7 @@ public isolated client class Caller {
     # Rolls back any messages received in this transacted session and releases any locks currently
     # held. This operation is only valid when using `SESSION_TRANSACTED` acknowledgement mode.
     # Rolled back messages will be redelivered according to the configured redelivery policy. Not
-    # allowed while a `transaction` block is using the session.
+    # allowed inside a `transaction` block, or while one is using the session.
     #
     # ```ballerina
     # check caller->'rollback();
