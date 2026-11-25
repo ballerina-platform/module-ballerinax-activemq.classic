@@ -446,12 +446,10 @@ function testListenerPanicBeforeSettlingRedelivers() returns error? {
         redeliveryPolicy: {maximumRedeliveries: 5, initialRedeliveryDelay: 200, redeliveryDelay: 200}
     } service object {
         remote function onMessage(Message message, Caller caller) returns error? {
-            int delivery;
             lock {
                 lstPanicDeliveries += 1;
-                delivery = lstPanicDeliveries;
             }
-            if delivery == 1 {
+            if message.redelivered != true {
                 panic error("simulated panic");
             }
             check caller->'commit();
