@@ -167,7 +167,7 @@ public type CertKey record {|
     string keyPassword?;
 |};
 
-# The optional settings of a message to send.
+# The message settings that a sender can set.
 #
 # + correlationId - Identifier used to correlate this message with another
 # + replyTo - Queue or topic where replies should be sent
@@ -175,12 +175,13 @@ public type CertKey record {|
 # + 'type - Application-defined message type, used for classification and filtering
 # + expiry - Timestamp (in milliseconds since epoch) when the message expires, or 0 if it doesn't
 #            expire
-# + priority - Message priority level (0-9)
+# + priority - Message priority level (0-9, where 0-4 is normal and 5-9 is expedited)
 # + properties - Application-specific properties attached to the message
 # + scheduledDelay - Delay in milliseconds before the first delivery. Scheduling requires
 #                    `schedulerSupport="true"` in the broker configuration
 # + scheduledPeriod - Period in milliseconds between deliveries
-# + scheduledRepeat - Number of additional deliveries after the first. `-1` repeats forever
+# + scheduledRepeat - Number of additional deliveries after the first. `-1` repeats forever. Requires
+#                     `scheduledPeriod`
 # + scheduledCron - Cron expression controlling the delivery schedule. Overrides the other schedule
 #                   settings
 public type SendOptions record {|
@@ -202,57 +203,25 @@ public type SendOptions record {|
 # + messageId - Unique identifier assigned to the message by the JMS provider
 # + timestamp - The time when the message was handed to the provider to be sent (in milliseconds
 #               since epoch)
-# + correlationId - Optional identifier used to correlate this message with another (typically used
-#                   in request-reply patterns)
-# + replyTo - Queue or topic where replies should be sent
 # + destination - Queue or topic where the message was sent
-# + persistent - Message delivery mode: true for persistent (survives broker restarts), false for
-#                non-persistent (faster but may be lost on broker failure)
 # + redelivered - Indicates whether this message is being redelivered after a previous delivery
 #                 attempt failed
-# + 'type - Message type identifier string (provider-specific or application-defined) used for
-#           message classification and filtering
-# + expiry - Timestamp (in milliseconds since epoch) when the message expires, or 0 if it doesn't
-#            expire
 # + deliveryTime - The earliest time when the message can be delivered to a consumer (in
 #                  milliseconds since epoch), or 0 if no delivery delay
-# + priority - Message priority level (0-9, where 0-4 is normal priority and 5-9 is expedited
-#              priority)
 # + userId - Identifier of the user who sent the message (if available from the broker)
 # + format - Format identifier of the message payload (e.g., "text", "binary", "json")
-# + properties - Application-specific custom properties attached to the message. Values are
-#                restricted to the types the JMS specification allows as message properties
 # + payload - The message content. Defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
-# + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
-#                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.
-# + scheduledPeriod - Period in milliseconds between successive redeliveries. Use together
-#                    with `scheduledRepeat` for periodic delivery.
-# + scheduledRepeat - Number of additional deliveries after the first. Use `-1` for
-#                    infinite repetition. Requires `scheduledPeriod` to be set.
-# + scheduledCron - Cron expression controlling the delivery schedule
-#                  (for example, `"0 0 12 * * ?"`). Overrides delay/period/repeat when set.
-#                  Requires the broker scheduler to be enabled.
 public type Message record {|
+    *SendOptions;
     string messageId?;
     int timestamp?;
-    string correlationId?;
-    Destination replyTo?;
     Destination destination?;
-    boolean persistent?;
     boolean redelivered?;
-    string 'type?;
-    int expiry?;
     int deliveryTime?;
-    int priority?;
     string userId?;
     string format?;
-    map<Property> properties?;
     anydata payload;
-    int scheduledDelay?;
-    int scheduledPeriod?;
-    int scheduledRepeat?;
-    string scheduledCron?;
 |};
 
 # Represents the allowed value types for a JMS message property, and for a typed `MapMessage` entry.
