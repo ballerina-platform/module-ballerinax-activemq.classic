@@ -280,7 +280,8 @@ public enum AcknowledgementMode {
 # + useExponentialBackOff - When enabled, increases the delay between redelivery attempts
 #                           exponentially using the backOffMultiplier
 # + backOffMultiplier - Multiplier applied to the delay on each redelivery when exponential backoff
-#                       is enabled (e.g., 5.0 means each retry delay is 5x the previous)
+#                       is enabled (e.g., 5.0 means each retry delay is 5x the previous). Has no
+#                       effect at 1.0 or below
 # + redeliveryDelay - The base delay (in milliseconds) between redelivery attempts
 # + preDispatchCheck - When enabled, checks the dispatch policy before redelivering a message
 public type RedeliveryPolicy record {|
