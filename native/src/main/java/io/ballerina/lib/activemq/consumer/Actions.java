@@ -226,7 +226,7 @@ public final class Actions {
         return state.transactionContext.joinCurrentTransaction();
     }
 
-    private static Object settleExplicitly(BObject bConsumer, String method, String verb,
+    private static Object settleExplicitly(BObject bConsumer, String method, String operation,
                                            SessionTransactionContext.Settlement settlement) {
         ConsumerState state = (ConsumerState) bConsumer.getNativeData(NATIVE_STATE);
         if (state == null || state.transactionContext == null) {
@@ -235,7 +235,7 @@ public final class Actions {
                         + "' is only valid when the consumer is configured with ackMode: SESSION_TRANSACTED");
             });
         }
-        return state.transactionContext.settleExplicitly(verb,
+        return state.transactionContext.settleExplicitly(operation,
                 () -> execute(bConsumer, method + " transaction", consumerState -> {
                     settlement.run(consumerState.transactionContext);
                     return null;

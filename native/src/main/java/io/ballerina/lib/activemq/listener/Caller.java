@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import io.ballerina.lib.activemq.util.MessageMapper;
 import io.ballerina.lib.activemq.util.SessionTransactionContext;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
@@ -28,6 +29,7 @@ import jakarta.jms.Message;
 
 import java.util.Objects;
 
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 
 /**
@@ -37,7 +39,6 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
  * @since 0.1.0
  */
 public class Caller {
-    static final String NATIVE_MESSAGE = "native.message";
     // Set only for a transacted session.
     static final String NATIVE_TRANSACTION_CONTEXT = "native.transaction.context";
 
@@ -79,37 +80,37 @@ public class Caller {
             SessionTransactionContext transactionContext =
                     (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
             if (transactionContext == null) {
-                return createError("Error", "Cannot acknowledge inside a transaction block: the service's session "
-                        + "isn't transacted. Use `sessionAckMode: SESSION_TRANSACTED` to acknowledge in a "
-                        + "transaction.");
+                return createError(ACTIVEMQ_ERROR, "Cannot acknowledge inside a transaction block: the service's "
+                        + "session isn't transacted. Use `sessionAckMode: SESSION_TRANSACTED` to acknowledge in "
+                        + "a transaction.");
             }
             return transactionContext.joinCurrentTransaction();
         }
         try {
-            Object nativeMessage = message.getNativeData(NATIVE_MESSAGE);
+            Object nativeMessage = message.getNativeData(MessageMapper.NATIVE_MESSAGE);
             if (Objects.nonNull(nativeMessage)) {
                 ((Message) nativeMessage).acknowledge();
             }
         } catch (JMSException exception) {
-            return createError("Error",
+            return createError(ACTIVEMQ_ERROR,
                     String.format("Error occurred while sending acknowledgement for the message: %s",
                             exception.getMessage()), exception);
         }
         return null;
     }
 
-    private static Object settleExplicitly(BObject caller, String verb, String errorPrefix,
+    private static Object settleExplicitly(BObject caller, String operation, String errorPrefix,
                                            SessionTransactionContext.Settlement settlement) {
         SessionTransactionContext transactionContext =
                 (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
         if (transactionContext == null) {
-            return createError("Error", errorPrefix + "Not a transacted session");
+            return createError(ACTIVEMQ_ERROR, errorPrefix + "Not a transacted session");
         }
-        return transactionContext.settleExplicitly(verb, () -> {
+        return transactionContext.settleExplicitly(operation, () -> {
             try {
                 settlement.run(transactionContext);
             } catch (JMSException exception) {
-                return createError("Error", errorPrefix + exception.getMessage(), exception);
+                return createError(ACTIVEMQ_ERROR, errorPrefix + exception.getMessage(), exception);
             }
             return null;
         });

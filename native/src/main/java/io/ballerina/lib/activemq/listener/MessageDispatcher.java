@@ -40,6 +40,7 @@ import java.io.PrintStream;
 import java.util.Optional;
 
 import static io.ballerina.lib.activemq.listener.Caller.NATIVE_TRANSACTION_CONTEXT;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.BCALLER_NAME;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_ERROR_METHOD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_MESSAGE_METHOD;
@@ -169,7 +170,7 @@ public class MessageDispatcher {
     }
 
     /**
-     * Creates a Ballerina Caller object with the JMS session attached as native data.
+     * Creates a Ballerina Caller object with its transaction context attached as native data.
      *
      * @return the Ballerina Caller object
      */
@@ -198,7 +199,7 @@ public class MessageDispatcher {
                     return;
                 }
                 String message = t.getMessage() != null ? t.getMessage() : "Failed to fetch the message";
-                BError error = createError("Error", message, t);
+                BError error = createError(ACTIVEMQ_ERROR, message, t);
                 boolean isConcurrentSafe = nativeService.isOnErrorMethodIsolated();
                 StrandMetadata metadata = new StrandMetadata(isConcurrentSafe, null);
                 Object result = ballerinaRuntime.callMethod(
