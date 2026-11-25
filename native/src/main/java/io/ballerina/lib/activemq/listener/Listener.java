@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import io.ballerina.lib.activemq.LoggingExceptionListener;
 import io.ballerina.lib.activemq.util.ConnectionConfig;
 import io.ballerina.lib.activemq.util.ConnectionFactoryUtils;
 import io.ballerina.runtime.api.Environment;
@@ -75,6 +76,7 @@ public final class Listener {
                     url.getValue(), config);
 
             Connection connection = factory.createConnection();
+            connection.setExceptionListener(new LoggingExceptionListener());
             bListener.addNativeData(NATIVE_CONNECTION, connection);
             bListener.addNativeData(NATIVE_SERVICE_LIST, new ArrayList<BObject>());
         } catch (Exception e) {
