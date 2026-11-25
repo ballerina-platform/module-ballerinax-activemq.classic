@@ -199,8 +199,9 @@ remote function onMessage(classic:Message message, classic:Caller caller) return
 }
 ```
 
-If `onMessage` returns an error or panics, unsettled messages are redelivered. If you catch the error,
-roll back yourself, or the next commit acknowledges the message.
+If `onMessage` returns an error or panics, unsettled messages are redelivered. If you catch an error
+from before `acknowledge()`, call `caller->'rollback()` after the block, or the next commit
+acknowledges the message.
 
 **Consumer.** Use `ackMode: SESSION_TRANSACTED`. Receiving or acknowledging inside a block joins it.
 
