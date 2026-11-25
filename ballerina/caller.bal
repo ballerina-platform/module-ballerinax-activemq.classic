@@ -22,7 +22,7 @@ public isolated client class Caller {
 
     # Acknowledges an ActiveMQ message. Outside a `transaction` block, this is only meaningful in
     # `CLIENT_ACKNOWLEDGE` mode, where acknowledging one message acknowledges every message the
-    # session has received up to and including it.
+    # session has consumed.
     #
     # ```ballerina
     # remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
@@ -38,11 +38,16 @@ public isolated client class Caller {
     # includes earlier messages that a previous `onMessage` call left unsettled: a JMS transaction
     # belongs to the session, not to the block.
     #
+    # Acknowledge first, before any work that can fail. Acknowledging doesn't settle anything until
+    # the block commits, so it's safe to call early. If the block fails before reaching it, the
+    # session never joined the block, and the next commit on the session acknowledges the message
+    # without it having been processed.
+    #
     # ```ballerina
     # remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
     #     transaction {
-    #         check producer->send({payload: "processed"});
     #         check caller->acknowledge(message);
+    #         check producer->send({payload: "processed"});
     #         check commit;
     #     }
     # }
@@ -58,15 +63,15 @@ public isolated client class Caller {
 
     # Commits all messages received in this transacted session and releases any locks currently
     # held. This operation is only valid when using `SESSION_TRANSACTED` acknowledgement mode.
-    # After committing, a new transaction is automatically started. Not allowed while the session is
-    # part of a `transaction` block; the block's own commit settles it.
+    # After committing, a new transaction is automatically started. Not allowed inside a
+    # `transaction` block, or while the session is part of one; the block's own commit settles it.
     #
     # ```ballerina
     # check caller->'commit();
     # ```
     #
-    # + return - `classic:Error` if the commit fails or the session is part of a `transaction`
-    #            block, `()` otherwise
+    # + return - `classic:Error` if the commit fails, or if called inside a `transaction` block
+    #            or while the session is part of one; `()` otherwise
     isolated remote function 'commit() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.listener.Caller"
     } external;
@@ -74,14 +79,15 @@ public isolated client class Caller {
     # Rolls back any messages received in this transacted session and releases any locks currently
     # held. This operation is only valid when using `SESSION_TRANSACTED` acknowledgement mode.
     # Rolled back messages will be redelivered according to the configured redelivery policy. Not
-    # allowed while the session is part of a `transaction` block; the block's own rollback settles it.
+    # allowed inside a `transaction` block, or while the session is part of one; the block's own
+    # rollback settles it.
     #
     # ```ballerina
     # check caller->'rollback();
     # ```
     #
-    # + return - `classic:Error` if the rollback fails or the session is part of a `transaction`
-    #            block, `()` otherwise
+    # + return - `classic:Error` if the rollback fails, or if called inside a `transaction` block
+    #            or while the session is part of one; `()` otherwise
     isolated remote function 'rollback() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.listener.Caller"
     } external;

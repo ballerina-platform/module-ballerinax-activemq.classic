@@ -28,13 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to it, so the block's commit acknowledges the session's received messages and its rollback has
   them redelivered. Outside a block, `caller->'commit()` and `caller->'rollback()` work as before.
   `caller->acknowledge()` returns an error inside a block if the session isn't transacted, and
-  `caller->'commit()`/`caller->'rollback()` return an error while the session is part of a block.
+  `caller->'commit()`/`caller->'rollback()` return an error inside a block or while the session
+  is part of one. Call `caller->acknowledge()` first in the block, so a later failure rolls the
+  message back.
 - A `MessageConsumer` with `ackMode: SESSION_TRANSACTED` can now take part in Ballerina
-  `transaction` blocks the same way: calling `consumer->acknowledge()` inside a block joins the
-  consumer's session to it. Outside a block, `consumer->'commit()` and `consumer->'rollback()`
-  work as before. `consumer->acknowledge()` returns an error inside a block if the consumer isn't
-  transacted, and `consumer->'commit()`/`consumer->'rollback()` return an error while the
-  consumer is part of a block.
+  `transaction` blocks the same way: calling `consumer->receive()`, `consumer->receiveNoWait()`
+  or `consumer->acknowledge()` inside a block joins the consumer's session to it, so a failure
+  anywhere after the receive rolls the message back. Outside a block, `consumer->'commit()` and
+  `consumer->'rollback()` work as before. `consumer->acknowledge()` returns an error inside a
+  block if the consumer isn't transacted, and `consumer->'commit()`/`consumer->'rollback()`
+  return an error inside a block or while the consumer is part of one.
 - Moved the test-only `TestProducer` native helper out of the released `activemq.classic-native` jar into a
   separate `testOnly`-scoped jar, so test utilities no longer ship in the production artifact.
 

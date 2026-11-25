@@ -90,18 +90,20 @@ public final class SessionTransactionContext implements BallerinaTransactionCont
     }
 
     /**
-     * Rejects an explicit commit or rollback while the session belongs to an open transaction block, because the
-     * block's own commit or rollback settles the session.
+     * Rejects an explicit commit or rollback made inside a transaction block, or while the session belongs to one,
+     * because the block's own commit or rollback settles the session. The session may not have joined the block
+     * yet; an explicit commit then would still settle its work in the middle of the block. Must be called on the
+     * calling strand.
      *
      * @param operation the explicit operation, {@code "commit"} or {@code "roll back"}
-     * @return a {@code BError} if the session belongs to an open transaction, or null
+     * @return a {@code BError} if the call is inside a transaction or the session belongs to one, or null
      */
     public synchronized BError checkExplicitSettlementAllowed(String operation) {
-        if (activeTransactionId == null) {
+        if (activeTransactionId == null && !TransactionResourceManager.getInstance().isInTransaction()) {
             return null;
         }
-        return createError(ACTIVEMQ_ERROR, "Cannot " + operation + " explicitly while the " + resourceName
-                + " is part of a transaction block. The block's commit or rollback settles it.");
+        return createError(ACTIVEMQ_ERROR, "Cannot " + operation + " explicitly inside a transaction block or "
+                + "while the " + resourceName + " is part of one. The block's commit or rollback settles it.");
     }
 
     @Override

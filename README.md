@@ -202,12 +202,18 @@ Calling `caller->acknowledge(message)` inside the block joins the service's sess
 ```ballerina
 remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
     transaction {
+        check caller->acknowledge(message);   // join first, before any work that can fail
         check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
-        check caller->acknowledge(message);
-        check commit;   // the message is acknowledged and the result is sent together
+        check commit;   // both sessions commit; the commits aren't atomic with each other
     }
 }
 ```
+
+**Acknowledge first.** In a transacted session, `acknowledge()` doesn't settle anything until the
+block commits, so calling it at the start of the block is safe. If you call it later and the block
+fails before reaching it, the service's session never joined the block, so the block's rollback
+doesn't cover the message. The message then stays unsettled in the session, and the next commit
+on that session acknowledges it without it having been processed.
 
 When the block commits, every message the service's session has received since its last commit
 or rollback is acknowledged, not just the one passed to `acknowledge()`. That includes earlier
@@ -217,11 +223,14 @@ those messages are redelivered under the redelivery policy. Outside a block,
 
 `caller->acknowledge()` returns a `classic:Error` inside a `transaction` block if the service's
 session isn't transacted, because that acknowledgement couldn't be rolled back with the block.
-`caller->'commit()` and `caller->'rollback()` return a `classic:Error` while the session is part
-of a block, because the block's own commit or rollback settles it.
+`caller->'commit()` and `caller->'rollback()` return a `classic:Error` when called inside a
+`transaction` block, or while the session is part of one, because the block's own commit or
+rollback settles it.
 
-A `MessageConsumer` created with `ackMode: SESSION_TRANSACTED` works the same way: calling
-`consumer->acknowledge(message)` inside a block joins the consumer's session to it.
+A `MessageConsumer` created with `ackMode: SESSION_TRANSACTED` joins a block when it calls
+`consumer->receive()`, `consumer->receiveNoWait()` or `consumer->acknowledge(message)` inside it.
+Because receiving joins, a failure anywhere after the receive rolls the message back with the
+block, and it is redelivered.
 
 ```ballerina
 classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
@@ -232,13 +241,13 @@ transaction {
         check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
         check consumer->acknowledge(message);
     }
-    check commit;   // the message is acknowledged and the result is sent together
+    check commit;   // both sessions commit; the commits aren't atomic with each other
 }
 ```
 
 The same rules apply: `consumer->acknowledge()` returns an error inside a block if the consumer
-isn't transacted, and `consumer->'commit()`/`consumer->'rollback()` return an error while the
-consumer is part of a block. Outside a block, they work as before.
+isn't transacted, and `consumer->'commit()`/`consumer->'rollback()` return an error when called
+inside a block or while the consumer is part of one. Outside a block, they work as before.
 
 A JMS transaction belongs to the session, not to the block, so the block covers every message the
 session has received since its last commit or rollback:

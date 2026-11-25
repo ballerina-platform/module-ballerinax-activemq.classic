@@ -121,6 +121,14 @@ public final class Actions {
                 return createError(ACTIVEMQ_ERROR, "ActiveMQ consumer is already closed");
             }
         }
+        // Must run here, on the calling strand. A transacted consumer joins the caller's transaction before it
+        // receives, so a failure anywhere after the receive rolls the message back with the block.
+        if (state.transactionContext != null && TransactionResourceManager.getInstance().isInTransaction()) {
+            BError joinError = state.transactionContext.joinCurrentTransaction();
+            if (joinError != null) {
+                return joinError;
+            }
+        }
         try {
             Message jmsMsg;
             synchronized (state.sessionLock) {

@@ -365,3 +365,48 @@ function testListenerExplicitCommitInsideBlockReturnsError() returns error? {
     }
     test:assertEquals(check receiveTexts(queueName), [], "the block's commit should still acknowledge it");
 }
+
+isolated string lstExplicitBeforeJoinError = "";
+
+@test:Config {
+    groups: ["transaction", "listener-transaction"]
+}
+function testListenerExplicitCommitBeforeJoiningReturnsError() returns error? {
+    string queueName = "tx.listener.explicitbeforejoin.queue";
+    check drainQueue(queueName);
+    Listener txListener = check new (BROKER_URL);
+    Service svc = @ServiceConfig {
+        queueName: "tx.listener.explicitbeforejoin.queue",
+        sessionAckMode: SESSION_TRANSACTED
+    } service object {
+        remote function onMessage(Message message, Caller caller) returns error? {
+            Error? explicitCommit = ();
+            transaction {
+                // The session hasn't joined the block yet, but the explicit commit is still refused.
+                explicitCommit = caller->'commit();
+                check caller->acknowledge(message);
+                check commit;
+            }
+            lock {
+                lstExplicitBeforeJoinError = explicitCommit is Error ? explicitCommit.message() : "no error";
+            }
+        }
+    };
+    check txListener.attach(svc);
+    check txListener.'start();
+
+    check sendToQueue(BROKER_URL, queueName, "explicit-before-join");
+    waitUntil(isolated function () returns boolean {
+        lock {
+            return lstExplicitBeforeJoinError != "";
+        }
+    });
+    runtime:sleep(1);
+    check txListener.gracefulStop();
+
+    lock {
+        test:assertTrue(lstExplicitBeforeJoinError.includes("Cannot commit explicitly inside a transaction block"),
+                "unexpected result: " + lstExplicitBeforeJoinError);
+    }
+    test:assertEquals(check receiveTexts(queueName), [], "the block's commit should still acknowledge it");
+}

@@ -279,16 +279,16 @@ function testConsumerSharedByConcurrentTransactionsReturnsError() returns error?
     string queueName = "tx.consumer.shared.queue";
     check drainQueue(queueName);
     check sendToQueue(BROKER_URL, queueName, "first");
-    check sendToQueue(BROKER_URL, queueName, "second");
     MessageConsumer consumer = check newTransactedConsumer(queueName);
 
     future<error?> slow = start acknowledgeInSlowTransaction(consumer, 3);
     runtime:sleep(1);
     Error? secondResult = ();
     transaction {
-        TextMessage? msg = check consumer->receive(5000);
-        if msg is TextMessage {
-            secondResult = consumer->acknowledge(msg);
+        // Receiving joins the consumer's session, so the second transaction is refused at the receive.
+        TextMessage|Error? msg = consumer->receive(1000);
+        if msg is Error {
+            secondResult = msg;
         }
         check commit;
     }
@@ -316,4 +316,77 @@ function testConsumerSharedByConcurrentTransactionsReturnsError() returns error?
     }
     test:assertEquals(later.payload, "third");
     test:assertEquals(check receiveTexts(queueName), [], "the later transaction should acknowledge its message");
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerFailureBeforeAcknowledgeRedelivers() returns error? {
+    string queueName = "tx.consumer.failbeforeack.queue";
+    check drainQueue(queueName);
+    check sendToQueue(BROKER_URL, queueName, "A");
+    MessageConsumer consumer = check newTransactedConsumer(queueName);
+
+    do {
+        transaction {
+            TextMessage? first = check consumer->receive(5000);
+            // Processing fails before the message is acknowledged. The receive has already joined the
+            // consumer's session to the block, so the block's rollback still covers the message.
+            check failStep();
+            if first is TextMessage {
+                check consumer->acknowledge(first);
+            }
+            check commit;
+        }
+    } on fail {
+    }
+    TextMessage? redelivered = ();
+    transaction {
+        redelivered = check consumer->receive(5000);
+        if redelivered is TextMessage {
+            check consumer->acknowledge(redelivered);
+        }
+        check commit;
+    }
+    check consumer->close();
+
+    if redelivered is () {
+        test:assertFail("a message whose block failed before acknowledge should be redelivered");
+    }
+    test:assertEquals(redelivered.payload, "A");
+    test:assertEquals(redelivered.redelivered, true, "the message should be flagged as redelivered");
+    test:assertEquals(check receiveTexts(queueName), [], "the second block's commit should acknowledge it");
+}
+
+@test:Config {
+    groups: ["transaction", "consumer-transaction"]
+}
+function testConsumerExplicitCommitBeforeJoiningReturnsError() returns error? {
+    string queueName = "tx.consumer.explicitbeforejoin.queue";
+    check drainQueue(queueName);
+    check sendToQueue(BROKER_URL, queueName, "before-join");
+    MessageConsumer consumer = check newTransactedConsumer(queueName);
+
+    // Received outside any block, so the consumer's session is open but hasn't joined a block.
+    TextMessage? received = check consumer->receive(5000);
+    Error? explicitCommit = ();
+    Error? explicitRollback = ();
+    transaction {
+        explicitCommit = consumer->'commit();
+        explicitRollback = consumer->'rollback();
+        check commit;
+    }
+    // Outside the block, the explicit commit is allowed and acknowledges the message.
+    check consumer->'commit();
+    check consumer->close();
+
+    test:assertTrue(received is TextMessage, "the message should be received");
+    if explicitCommit is () || explicitRollback is () {
+        test:assertFail("explicit commit and rollback must be refused inside a transaction block");
+    }
+    test:assertTrue(explicitCommit.message().includes("Cannot commit explicitly inside a transaction block"),
+            "unexpected error message: " + explicitCommit.message());
+    test:assertTrue(explicitRollback.message().includes("Cannot roll back explicitly inside a transaction block"),
+            "unexpected error message: " + explicitRollback.message());
+    test:assertEquals(check receiveTexts(queueName), [], "the explicit commit outside the block should settle it");
 }
