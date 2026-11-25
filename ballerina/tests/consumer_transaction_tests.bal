@@ -186,7 +186,7 @@ function testConsumerAcknowledgeAndProducerSendCommitTogether() returns error? {
             TextMessage? msg = check consumer->receive(5000);
             if msg is TextMessage {
                 redelivered.push(msg.redelivered);
-                check producer->send({payload: "processed-" + attempt.toString()});
+                check producer->send("processed-" + attempt.toString());
                 check consumer->acknowledge(msg);
             }
             if attempt == 1 {
@@ -405,7 +405,7 @@ function forwardThenCloseProducer(MessageConsumer consumer, MessageProducer prod
     transaction {
         TextMessage? msg = check consumer->receive(5000);
         if msg is TextMessage {
-            check producer->send({payload: msg.payload});
+            check producer->send(msg.payload);
         }
         check producer->close();
         check commit;

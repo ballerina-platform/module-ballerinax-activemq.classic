@@ -23,7 +23,7 @@ function testDataBindingString() returns error? {
     check drainQueue("it.databind.string.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     string payload = "This is a sample payload";
-    check producer->send({payload}, {queueName: "it.databind.string.queue"});
+    check producer->send(payload, {queueName: "it.databind.string.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -43,7 +43,7 @@ function testDataBindingUntypedTextMessageIsBytes() returns error? {
     check drainQueue("it.databind.untypedtext.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     string payload = "This is a sample payload";
-    check producer->send({payload}, {queueName: "it.databind.untypedtext.queue"});
+    check producer->send(payload, {queueName: "it.databind.untypedtext.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -93,7 +93,7 @@ function testDataBindingRecord() returns error? {
     check drainQueue("it.databind.record.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     record {|string name; int age;|} payload = {name: "Ana", age: 30};
-    check producer->send({payload}, {queueName: "it.databind.record.queue"});
+    check producer->send(payload, {queueName: "it.databind.record.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -113,7 +113,7 @@ function testDataBindingRecordWithByteArrayField() returns error? {
     check drainQueue("it.databind.mapbytes.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     record {|string name; byte[] data;|} payload = {name: "blob", data: "hello".toBytes()};
-    check producer->send({payload}, {queueName: "it.databind.mapbytes.queue"});
+    check producer->send(payload, {queueName: "it.databind.mapbytes.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -134,8 +134,8 @@ function testDataBindingRecordWithByteArrayField() returns error? {
 function testDataBindingUntypedMapWithByteArrayField() returns error? {
     check drainQueue("it.databind.untypedmapbytes.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: {"note": "x", "data": "world".toBytes()}},
-        {queueName: "it.databind.untypedmapbytes.queue"});
+    check producer->send(
+            {"note": "x", "data": "world".toBytes()}, {queueName: "it.databind.untypedmapbytes.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -165,7 +165,7 @@ function testDataBindingByteArray() returns error? {
     check drainQueue("it.databind.bytes.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     byte[] payload = [72, 101, 108, 108, 111];
-    check producer->send({payload}, {queueName: "it.databind.bytes.queue"});
+    check producer->send(payload, {queueName: "it.databind.bytes.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -184,7 +184,7 @@ function testDataBindingByteArray() returns error? {
 function testDataBindingUntypedDefault() returns error? {
     check drainQueue("it.databind.untyped.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "Hello".toBytes()}, {queueName: "it.databind.untyped.queue"});
+    check producer->send("Hello".toBytes(), {queueName: "it.databind.untyped.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -204,7 +204,7 @@ function testDataBindingUntypedDefault() returns error? {
 function testDataBindingTypeMismatch() returns error? {
     check drainQueue("it.databind.mismatch.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "not a number"}, {queueName: "it.databind.mismatch.queue"});
+    check producer->send("not a number", {queueName: "it.databind.mismatch.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -251,7 +251,7 @@ function testTemporaryReplyToRoundTripsIdentity() returns error? {
         if replyTo is Queue {
             test:assertTrue(replyTo.temporary, "replyTo should be marked temporary");
             MessageProducer producer = check new (brokerUrl, username = username, password = password);
-            check producer->send({payload: "reply payload"}, replyTo);
+            check producer->send("reply payload", replyTo);
             check producer->close();
         }
     }
@@ -297,7 +297,7 @@ function testDataBindingIntegerPayload() returns error? {
     check drainQueue("it.databind.int.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     int payload = 42;
-    check producer->send({payload}, {queueName: "it.databind.int.queue"});
+    check producer->send(payload, {queueName: "it.databind.int.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -322,9 +322,9 @@ function testDataBindingOtherScalarPayloadTypes() returns error? {
     float floatPayload = 3.5;
     decimal decimalPayload = 12.75d;
     boolean boolPayload = true;
-    check producer->send({payload: floatPayload}, {queueName: "it.databind.floatpayload.queue"});
-    check producer->send({payload: decimalPayload}, {queueName: "it.databind.decimalpayload.queue"});
-    check producer->send({payload: boolPayload}, {queueName: "it.databind.boolpayload.queue"});
+    check producer->send(floatPayload, {queueName: "it.databind.floatpayload.queue"});
+    check producer->send(decimalPayload, {queueName: "it.databind.decimalpayload.queue"});
+    check producer->send(boolPayload, {queueName: "it.databind.boolpayload.queue"});
     check producer->close();
 
     MessageConsumer floatConsumer = check new (brokerUrl,

@@ -41,10 +41,7 @@ function testItTopicPublishAndSubscribe() returns error? {
     runtime:sleep(3);
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-topic-single-01",
-        payload: "Topic publish test".toBytes()
-    }, {topicName: "it.topic.single"});
+    check prod->send("Topic publish test".toBytes(), {topicName: "it.topic.single"});
     check prod->close();
 
     runtime:sleep(5);
@@ -88,10 +85,7 @@ function testItTopicMultipleSubscribers() returns error? {
     runtime:sleep(4);
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-topic-multi-01",
-        payload: "Topic fan-out message".toBytes()
-    }, {topicName: "it.topic.multi"});
+    check prod->send("Topic fan-out message".toBytes(), {topicName: "it.topic.multi"});
     check prod->close();
 
     runtime:sleep(5);

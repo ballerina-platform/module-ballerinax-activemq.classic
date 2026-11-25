@@ -52,8 +52,7 @@ function testItSuccessfulConnection() returns error? {
 function testItConnectionWrongHost() {
     MessageProducer|Error result = new MessageProducer("tcp://localhost:19999");
     if result is MessageProducer {
-        Error? sendErr = result->send(
-            {messageId: "dead-wrong-host", payload: "x".toBytes()}, {queueName: "it.conn.discard.queue"});
+        Error? sendErr = result->send("x".toBytes(), {queueName: "it.conn.discard.queue"});
         do { check result->close(); } on fail { }
         test:assertTrue(sendErr is Error,
             "send should fail when the broker is unreachable");

@@ -77,7 +77,7 @@ isolated function waitForFlag(string name) returns error? {
 // `<name>.release` is set.
 function sendInHeldTransaction(MessageProducer producer, string payload, string name) returns error? {
     transaction {
-        check producer->send({payload});
+        check producer->send(payload);
         setFlag(name + ".joined");
         check waitForFlag(name + ".release");
         check commit;
@@ -93,8 +93,8 @@ function testTransactionCommitDeliversAllSends() returns error? {
     MessageProducer producer = check new (BROKER_URL, transacted = true, destination = {queueName});
 
     transaction {
-        check producer->send({payload: "a"});
-        check producer->send({payload: "b"});
+        check producer->send("a");
+        check producer->send("b");
         check commit;
     }
     check producer->close();
@@ -113,7 +113,7 @@ function testTransactionRollbackDiscardsSends() returns error? {
     boolean shouldRollback = true;
 
     transaction {
-        check producer->send({payload: "discard-me"});
+        check producer->send("discard-me");
         if shouldRollback {
             rollback;
         } else {
@@ -136,7 +136,7 @@ function testTransactionFailedBlockDiscardsSends() returns error? {
     error? blockError = ();
     do {
         transaction {
-            check producer->send({payload: "discard-me"});
+            check producer->send("discard-me");
             check failStep();
             check commit;
         }
@@ -160,9 +160,9 @@ function testTransactionFailedSendRollsBackEarlierSends() returns error? {
     error? blockError = ();
     do {
         transaction {
-            check producer->send({payload: "sent-before-failure"});
+            check producer->send("sent-before-failure");
             // Priority 15 is invalid, so this send fails and `check` fails the block.
-            check producer->send({payload: "invalid", priority: 15});
+            check producer->send("invalid", priority = 15);
             check commit;
         }
     } on fail error e {
@@ -185,7 +185,7 @@ function testNonTransactedProducerInTransactionReturnsError() returns error? {
 
     Error? sendResult = ();
     transaction {
-        sendResult = producer->send({payload: "should-not-be-sent"});
+        sendResult = producer->send("should-not-be-sent");
         check commit;
     }
     check producer->close();
@@ -206,7 +206,7 @@ function testTransactedProducerOutsideTransactionReturnsError() returns error? {
     check drainQueue(queueName);
     MessageProducer producer = check new (BROKER_URL, transacted = true, destination = {queueName});
 
-    Error? sendResult = producer->send({payload: "should-not-be-sent"});
+    Error? sendResult = producer->send("should-not-be-sent");
     check producer->close();
 
     if sendResult is () {
@@ -225,7 +225,7 @@ function testNonTransactedProducerStillSendsOutsideTransaction() returns error? 
     check drainQueue(queueName);
     MessageProducer producer = check new (BROKER_URL, destination = {queueName});
 
-    check producer->send({payload: "plain"});
+    check producer->send("plain");
     check producer->close();
 
     test:assertEquals(check receiveTexts(queueName), ["plain"],
@@ -243,7 +243,7 @@ function testTransactionRetryDeliversOnlyTheCommittedAttempt() returns error? {
     int attempts = 0;
     retry transaction {
         attempts += 1;
-        check producer->send({payload: "attempt-" + attempts.toString()});
+        check producer->send("attempt-" + attempts.toString());
         if attempts < 2 {
             check failRetriableStep();
         }
@@ -266,7 +266,7 @@ function testSequentialTransactionsReuseProducer() returns error? {
     boolean shouldRollback = true;
 
     transaction {
-        check producer->send({payload: "first-rolled-back"});
+        check producer->send("first-rolled-back");
         if shouldRollback {
             rollback;
         } else {
@@ -274,11 +274,11 @@ function testSequentialTransactionsReuseProducer() returns error? {
         }
     }
     transaction {
-        check producer->send({payload: "second-committed"});
+        check producer->send("second-committed");
         check commit;
     }
     transaction {
-        check producer->send({payload: "third-committed"});
+        check producer->send("third-committed");
         check commit;
     }
     check producer->close();
@@ -300,16 +300,16 @@ function testTwoProducersInOneBlock() returns error? {
 
     do {
         transaction {
-            check orders->send({payload: "order-rolled-back"});
-            check audit->send({payload: "audit-rolled-back"});
+            check orders->send("order-rolled-back");
+            check audit->send("audit-rolled-back");
             check failStep();
             check commit;
         }
     } on fail {
     }
     transaction {
-        check orders->send({payload: "order-committed"});
-        check audit->send({payload: "audit-committed"});
+        check orders->send("order-committed");
+        check audit->send("audit-committed");
         check commit;
     }
     check orders->close();
@@ -331,7 +331,7 @@ function testProducerSharedByConcurrentTransactionsReturnsError() returns error?
     check waitForFlag("producer.shared.joined");
     Error? secondResult = ();
     transaction {
-        secondResult = producer->send({payload: "second"});
+        secondResult = producer->send("second");
         check commit;
     }
     setFlag("producer.shared.release");
@@ -351,7 +351,7 @@ function testProducerSharedByConcurrentTransactionsReturnsError() returns error?
 // Sends one message from a function that isn't itself a transaction block. It is `transactional`,
 // so it can only be called inside a transaction, and its send joins the caller's transaction.
 transactional function sendFromHelper(MessageProducer producer, string payload) returns error? {
-    check producer->send({payload});
+    check producer->send(payload);
 }
 
 @test:Config {
@@ -365,7 +365,7 @@ function testUncommittedSendsAreNotVisibleBeforeCommit() returns error? {
 
     TextMessage? seenBeforeCommit = ();
     transaction {
-        check producer->send({payload: "pending"});
+        check producer->send("pending");
         // A JMS transacted send isn't visible to consumers until the session commits.
         seenBeforeCommit = check observer->receive(1000);
         check commit;
@@ -392,7 +392,7 @@ function testCommitPreservesSendOrder() returns error? {
     string[] sent = ["m1", "m2", "m3", "m4", "m5"];
     transaction {
         foreach string payload in sent {
-            check producer->send({payload});
+            check producer->send(payload);
         }
         check commit;
     }
@@ -414,16 +414,16 @@ function testQueueAndTopicSendsCommitTogether() returns error? {
 
     do {
         transaction {
-            check producer->send({payload: "queue-rolled-back"}, {queueName});
-            check producer->send({payload: "topic-rolled-back"}, {topicName});
+            check producer->send("queue-rolled-back", {queueName});
+            check producer->send("topic-rolled-back", {topicName});
             check failStep();
             check commit;
         }
     } on fail {
     }
     transaction {
-        check producer->send({payload: "queue-committed"}, {queueName});
-        check producer->send({payload: "topic-committed"}, {topicName});
+        check producer->send("queue-committed", {queueName});
+        check producer->send("topic-committed", {topicName});
         check commit;
     }
     check producer->close();
@@ -450,7 +450,7 @@ function testNonPersistentSendsAreTransactional() returns error? {
     boolean shouldRollback = true;
 
     transaction {
-        check producer->send({payload: "non-persistent-rolled-back", persistent: false});
+        check producer->send("non-persistent-rolled-back", persistent = false);
         if shouldRollback {
             rollback;
         } else {
@@ -458,7 +458,7 @@ function testNonPersistentSendsAreTransactional() returns error? {
         }
     }
     transaction {
-        check producer->send({payload: "non-persistent-committed", persistent: false});
+        check producer->send("non-persistent-committed", persistent = false);
         check commit;
     }
     check producer->close();
@@ -506,7 +506,7 @@ function testSeparateProducersInConcurrentTransactionsCommitIndependently() retu
     future<error?> held = start sendInHeldTransaction(first, "from-first", "producer.concurrent");
     check waitForFlag("producer.concurrent.joined");
     transaction {
-        check second->send({payload: "from-second"});
+        check second->send("from-second");
         check commit;
     }
     // The second transaction committed while the first is still open.
@@ -530,8 +530,8 @@ function testSeparateProducersInConcurrentTransactionsCommitIndependently() retu
 // Sends with both producers, then closes the first one so that its session can't commit or roll back.
 function sendThenCloseFirst(MessageProducer first, MessageProducer second, boolean failBlock) returns error? {
     transaction {
-        check first->send({payload: "first"});
-        check second->send({payload: "second"});
+        check first->send("first");
+        check second->send("second");
         check first->close();
         if failBlock {
             check failStep();
@@ -555,7 +555,7 @@ function testFailedCommitRollsBackOtherProducers() returns error? {
     future<error?> block = start sendThenCloseFirst(first, second, false);
     error? blockError = trap wait block;
     transaction {
-        check second->send({payload: "later"});
+        check second->send("later");
         check commit;
     }
     check second->close();
@@ -580,7 +580,7 @@ function testFailedRollbackStillRollsBackOtherProducers() returns error? {
     future<error?> block = start sendThenCloseFirst(first, second, true);
     error? blockError = trap wait block;
     transaction {
-        check second->send({payload: "later"});
+        check second->send("later");
         check commit;
     }
     check second->close();

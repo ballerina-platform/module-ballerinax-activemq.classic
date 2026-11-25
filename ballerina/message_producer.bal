@@ -46,12 +46,12 @@ public isolated client class MessageProducer {
         'class: "io.ballerina.lib.activemq.producer.Actions"
     } external;
 
-    # Sends a message to the specified destination, or to the producer's configured default
+    # Sends a payload to the specified destination, or to the producer's configured default
     # destination if `destination` is not given.
     #
     # ```ballerina
-    # check producer->send(message);
-    # check producer->send(message, {topicName: "order.events"});
+    # check producer->send("hello");
+    # check producer->send("hello", {topicName: "order.events"}, priority = 7);
     # ```
     #
     # A transacted producer must send inside a `transaction` block. Messages are delivered on
@@ -59,18 +59,24 @@ public isolated client class MessageProducer {
     #
     # ```ballerina
     # transaction {
-    #     check producer->send(message);
+    #     check producer->send("hello");
     #     check commit;
     # }
     # ```
     #
-    # + message - The message to send
+    # + payload - The message content. `string` and `xml` are sent as a `TextMessage`, `byte[]` as a
+    #             `BytesMessage`, a map or record as a `MapMessage`, and anything else as JSON bytes.
+    #             A `MapMessage` keeps only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
+    #             values
     # + destination - The destination to send to for this call, overriding the producer's
     #                 configured default destination, if any
+    # + options - The optional message settings, such as the priority
     # + return - `classic:Error` if sending fails, if a transacted producer sends outside a
     #            `transaction` block or a non-transacted one sends inside, or if the producer is in
     #            another transaction, `()` otherwise
-    isolated remote function send(Message message, Destination? destination = ()) returns Error? {
+    isolated remote function send(anydata payload, Destination? destination = (), *SendOptions options)
+            returns Error? {
+        Message message = {payload, ...options};
         check validateMessage(message);
         return self.externSend(message, destination);
     }

@@ -21,10 +21,8 @@ import ballerina/test;
 }
 isolated function testSendRejectsInvalidPriority() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    Error? result = producer->send({
-        payload: "invalid priority".toBytes(),
-        priority: 15
-    }, {queueName: "validation.priority.queue"});
+    Error? result = producer->send(
+            "invalid priority".toBytes(), {queueName: "validation.priority.queue"}, priority = 15);
     check producer->close();
     test:assertTrue(result is Error, "priority outside 0-9 should be rejected");
     if result is Error {

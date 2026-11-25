@@ -167,6 +167,36 @@ public type CertKey record {|
     string keyPassword?;
 |};
 
+# The optional settings of a message to send.
+#
+# + correlationId - Identifier used to correlate this message with another
+# + replyTo - Queue or topic where replies should be sent
+# + persistent - `true` to survive broker restarts, `false` to send faster without persistence
+# + 'type - Application-defined message type, used for classification and filtering
+# + expiry - Timestamp (in milliseconds since epoch) when the message expires, or 0 if it doesn't
+#            expire
+# + priority - Message priority level (0-9)
+# + properties - Application-specific properties attached to the message
+# + scheduledDelay - Delay in milliseconds before the first delivery. Scheduling requires
+#                    `schedulerSupport="true"` in the broker configuration
+# + scheduledPeriod - Period in milliseconds between deliveries
+# + scheduledRepeat - Number of additional deliveries after the first. `-1` repeats forever
+# + scheduledCron - Cron expression controlling the delivery schedule. Overrides the other schedule
+#                   settings
+public type SendOptions record {|
+    string correlationId?;
+    Destination replyTo?;
+    boolean persistent?;
+    string 'type?;
+    int expiry?;
+    int priority?;
+    map<Property> properties?;
+    int scheduledDelay?;
+    int scheduledPeriod?;
+    int scheduledRepeat?;
+    string scheduledCron?;
+|};
+
 # Represents a message received from an ActiveMQ broker.
 #
 # + messageId - Unique identifier assigned to the message by the JMS provider
@@ -192,12 +222,7 @@ public type CertKey record {|
 # + format - Format identifier of the message payload (e.g., "text", "binary", "json")
 # + properties - Application-specific custom properties attached to the message. Values are
 #                restricted to the types the JMS specification allows as message properties
-# + payload - The message content. On send, the runtime type determines the JMS message produced
-#             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
-#             In a map or record, only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
-#             values are kept; `()` values are dropped silently and others with a warning, so the
-#             payload may be incomplete.
-#             On receive, defaults to the JMS-message-appropriate representation unless narrowed
+# + payload - The message content. Defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
 # + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
 #                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.

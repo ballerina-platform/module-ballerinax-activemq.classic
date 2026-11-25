@@ -65,18 +65,22 @@ public function main() returns error? {
         password = "admin"
     );
 
-    check producer->send({
-        payload: "{'item':'book','qty':2}".toBytes(),
-        properties: {"region": "APAC"}
-    }, {queueName: "orders.queue"});
+    check producer->send("{'item':'book','qty':2}".toBytes(), {queueName: "orders.queue"},
+            properties = {"region": "APAC"});
 
     check producer->close();
 }
 ```
 
-`messageId` is optional — the JMS provider assigns the real one on send, and it's populated on
-any message you receive back. Set it yourself only if you have a specific reason to; use
-`correlationId` instead for application-level correlation.
+The payload comes first. Optional settings, such as `correlationId` and `priority`, are named
+arguments. The broker assigns the `messageId`.
+
+To forward a received message, send its payload and any settings you want to keep. Other settings
+aren't copied:
+
+```ballerina
+check producer->send(message.payload, {queueName: "next.queue"}, priority = 7);
+```
 
 A producer can also be configured with a default `destination`, letting you omit it on every
 `send()` call unless you need to override it for a specific message:
@@ -85,7 +89,7 @@ A producer can also be configured with a default `destination`, letting you omit
 classic:MessageProducer producer = check new ("tcp://localhost:61616",
     destination = {queueName: "orders.queue"}
 );
-check producer->send({payload: "{'item':'book','qty':2}".toBytes()});
+check producer->send("{'item':'book','qty':2}".toBytes());
 ```
 
 ### 4. Receive a message from a queue
@@ -164,10 +168,7 @@ type is routed to `onError` (if defined) instead of being silently dropped.
 Use a `Topic` destination when calling `send`:
 
 ```ballerina
-check producer->send({
-    correlationId: "evt-001",
-    payload: "order placed".toBytes()
-}, {topicName: "order.events"});
+check producer->send("order placed".toBytes(), {topicName: "order.events"}, correlationId = "evt-001");
 ```
 
 ### 7. Transactions
@@ -180,8 +181,8 @@ discarded on rollback.
 ```ballerina
 classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
 transaction {
-    check producer->send({payload: "order A".toBytes()}, {queueName: "orders.queue"});
-    check producer->send({payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+    check producer->send("order A".toBytes(), {queueName: "orders.queue"});
+    check producer->send("audit A".toBytes(), {queueName: "audit.queue"});
     check commit;
 }
 ```
@@ -193,7 +194,7 @@ Nothing is settled until the block commits.
 remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
     transaction {
         check caller->acknowledge(message);
-        check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
+        check producer->send("processed".toBytes(), {queueName: "results.queue"});
         check commit;
     }
 }
@@ -213,7 +214,7 @@ classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
 transaction {
     classic:Message? message = check consumer->receive(5000);
     if message is classic:Message {
-        check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
+        check producer->send("processed".toBytes(), {queueName: "results.queue"});
     }
     check commit;
 }

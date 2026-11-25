@@ -24,10 +24,7 @@ import ballerina/time;
 function testItReceiveTextMessageFromQueue() returns error? {
     check drainQueue("it.cons.text.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({
-        messageId: "it-cons-text-01",
-        payload: "Hello Consumer".toBytes()
-    }, {queueName: "it.cons.text.queue"});
+    check producer->send("Hello Consumer".toBytes(), {queueName: "it.cons.text.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -48,10 +45,7 @@ function testItReceiveBytesMessageFromQueue() returns error? {
     check drainQueue("it.cons.bytes.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     byte[] original = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01];
-    check producer->send({
-        messageId: "it-cons-bytes-01",
-        payload: original
-    }, {queueName: "it.cons.bytes.queue"});
+    check producer->send(original, {queueName: "it.cons.bytes.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -71,11 +65,8 @@ function testItReceiveBytesMessageFromQueue() returns error? {
 function testItReceiveMapMessageFromQueue() returns error? {
     check drainQueue("it.cons.map.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({
-        messageId: "it-cons-map-01",
-        payload: "{}".toBytes(),
-        properties: {"environment": "test", "version": "2"}
-    }, {queueName: "it.cons.map.queue"});
+    check producer->send("{}".toBytes(), {queueName: "it.cons.map.queue"},
+            properties = {"environment": "test", "version": "2"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -111,10 +102,7 @@ function testItReceiveTimeoutEmptyQueue() returns error? {
 function testItReceiveNoWaitReturnsAvailableMessage() returns error? {
     check drainQueue("it.cons.nowait.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({
-        messageId: "it-cons-nowait-01",
-        payload: "Hello NoWait".toBytes()
-    }, {queueName: "it.cons.nowait.queue"});
+    check producer->send("Hello NoWait".toBytes(), {queueName: "it.cons.nowait.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,

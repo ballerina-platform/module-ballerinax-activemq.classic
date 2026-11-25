@@ -188,7 +188,7 @@ function testListenerAcknowledgeAndProducerSendCommitTogether() returns error? {
                 delivery = lstWithProducerDeliveries;
             }
             transaction {
-                check listenerTxOutProducer->send({payload: "processed-" + delivery.toString()},
+                check listenerTxOutProducer->send("processed-" + delivery.toString(),
                         {queueName: "tx.listener.withproducer.out.queue"});
                 check caller->acknowledge(message);
                 if delivery == 1 {

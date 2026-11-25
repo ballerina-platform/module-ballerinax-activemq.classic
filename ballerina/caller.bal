@@ -39,7 +39,7 @@ public isolated client class Caller {
     # remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
     #     transaction {
     #         check caller->acknowledge(message);
-    #         check producer->send({payload: "processed"});
+    #         check producer->send("processed");
     #         check commit;
     #     }
     # }

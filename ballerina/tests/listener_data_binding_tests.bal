@@ -41,7 +41,7 @@ function testListenerOnMessageStringPayload() returns error? {
     check dataBindingListener.attach(stringSvc, "it-listener-databind-string-svc");
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "Listener typed payload"}, {queueName: "it.listener.databind.string.queue"});
+    check producer->send("Listener typed payload", {queueName: "it.listener.databind.string.queue"});
     check producer->close();
 
     runtime:sleep(5);
@@ -71,7 +71,7 @@ function testListenerOnMessageRecordPayload() returns error? {
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     record {|string name; int age;|} payload = {name: "Ana", age: 30};
-    check producer->send({payload}, {queueName: "it.listener.databind.record.queue"});
+    check producer->send(payload, {queueName: "it.listener.databind.record.queue"});
     check producer->close();
 
     runtime:sleep(5);
@@ -100,8 +100,7 @@ function testListenerOnMessageUntypedTextPayloadIsBytes() returns error? {
     check dataBindingListener.attach(untypedSvc, "it-listener-databind-untypedtext-svc");
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "Untyped listener payload"},
-        {queueName: "it.listener.databind.untypedtext.queue"});
+    check producer->send("Untyped listener payload", {queueName: "it.listener.databind.untypedtext.queue"});
     check producer->close();
 
     runtime:sleep(5);
@@ -136,7 +135,7 @@ function testListenerOnMessageUntypedMapMessageDoesNotCrash() returns error? {
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
     record {|string name; int age;|} payload = {name: "Ana", age: 30};
-    check producer->send({payload}, {queueName: "it.listener.databind.untypedmap.queue"});
+    check producer->send(payload, {queueName: "it.listener.databind.untypedmap.queue"});
     check producer->close();
 
     runtime:sleep(5);
@@ -168,7 +167,7 @@ function testListenerOnMessageTypeMismatchGoesToOnError() returns error? {
     check dataBindingListener.attach(mismatchSvc, "it-listener-databind-mismatch-svc");
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "not a number"}, {queueName: "it.listener.databind.mismatch.queue"});
+    check producer->send("not a number", {queueName: "it.listener.databind.mismatch.queue"});
     check producer->close();
 
     runtime:sleep(5);

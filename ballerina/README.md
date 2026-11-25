@@ -112,9 +112,7 @@ Now you can use the available connector operations to interact with the ActiveMQ
 #### Send a message to a queue
 
 ```ballerina
-check producer->send({
-    payload: "This is a sample message"
-}, {queueName});
+check producer->send("This is a sample message", {queueName});
 ```
 
 #### Receive a message from a queue
