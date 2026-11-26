@@ -163,6 +163,27 @@ public final class SessionTransactionContext {
     }
 
     /**
+     * Commits the session for its transaction block. For a session that receives, the rollback-only check and the
+     * commit are atomic with {@link #rollbackUnsettled()}, so a delivery that fails meanwhile is never committed.
+     * A session that only sends can't become rollback-only, and doesn't take this lock: a send holds the session
+     * lock while it joins a transaction, so the opposite order could deadlock.
+     *
+     * @throws JMSException if the commit fails, or if the session can only roll back
+     */
+    void commitInBlock() throws JMSException {
+        if (!receives) {
+            commitSession();
+            return;
+        }
+        synchronized (this) {
+            if (rollbackOnly) {
+                throw new JMSException("onMessage failed while the transaction was using its session");
+            }
+            commitSession();
+        }
+    }
+
+    /**
      * Commits the session.
      *
      * @throws JMSException if the commit fails

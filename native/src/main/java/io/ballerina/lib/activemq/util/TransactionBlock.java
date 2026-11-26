@@ -110,7 +110,7 @@ final class TransactionBlock implements BallerinaTransactionContext {
         for (SessionTransactionContext sessionContext : sessions) {
             try {
                 if (failure == null) {
-                    sessionContext.commitSession();
+                    sessionContext.commitInBlock();
                 } else {
                     rollbackSession(sessionContext);
                 }
