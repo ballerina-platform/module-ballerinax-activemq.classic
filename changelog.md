@@ -18,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently dropped.
 - Added support for Ballerina `transaction` blocks in producers (`transacted: true`), and in consumers and
   `Listener` services (`SESSION_TRANSACTED`).
-- Added payload-first `MessageProducer.send()`, with optional settings as named arguments.
 
 ### Changed
 - Moved the test-only `TestProducer` native helper out of the released `activemq.classic-native` jar into a
