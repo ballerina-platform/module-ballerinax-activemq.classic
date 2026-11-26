@@ -23,6 +23,7 @@ import io.ballerina.runtime.transactions.TransactionResourceManager;
 import jakarta.jms.JMSException;
 import jakarta.jms.Session;
 
+import java.io.PrintStream;
 import java.util.function.Supplier;
 
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
@@ -34,6 +35,8 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
  * @since 0.1.0
  */
 public final class SessionTransactionContext {
+
+    private static final PrintStream ERR_OUT = System.err;
 
     private final Session session;
     private final Object sessionLock;
@@ -168,7 +171,7 @@ public final class SessionTransactionContext {
      * A session that only sends can't become rollback-only, and doesn't take this lock: a send holds the session
      * lock while it joins a transaction, so the opposite order could deadlock.
      *
-     * @throws JMSException if the commit fails, or if the session can only roll back
+     * @throws JMSException if the commit fails, or if the session can only roll back, in which case it's rolled back
      */
     void commitInBlock() throws JMSException {
         if (!receives) {
@@ -177,6 +180,7 @@ public final class SessionTransactionContext {
         }
         synchronized (this) {
             if (rollbackOnly) {
+                rollbackSession();
                 throw new JMSException("onMessage failed while the transaction was using its session");
             }
             commitSession();
@@ -213,9 +217,20 @@ public final class SessionTransactionContext {
         return rollbackOnly;
     }
 
-    /** Lets the session join another transaction. */
+    /**
+     * Lets the session join another transaction. If a delivery failed after the session was settled, rolls back what
+     * the session has received since, so the next commit doesn't acknowledge it.
+     */
     synchronized void leaveTransaction() {
+        boolean failedAfterSettling = rollbackOnly;
         activeTransactionId = null;
         rollbackOnly = false;
+        if (failedAfterSettling) {
+            try {
+                rollbackSession();
+            } catch (JMSException e) {
+                ERR_OUT.println("Failed to roll back the session after a processing failure: " + e.getMessage());
+            }
+        }
     }
 }
