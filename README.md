@@ -199,9 +199,11 @@ remote function onMessage(classic:Message message, classic:Caller caller) return
 }
 ```
 
-If `onMessage` returns an error or panics, unsettled messages are redelivered. If you catch an error
-from before `acknowledge()`, call `caller->'rollback()` after the block, or the next commit
-acknowledges the message.
+The session joins the block only at `acknowledge()`, so call it before any conditional logic. A
+`rollback` before `acknowledge()` doesn't cover the message. If `onMessage` returns an error or panics,
+unsettled messages are redelivered. If it returns normally without settling the message, for example
+after an early `rollback` or a caught error, call `caller->'rollback()` after the block, or the next
+commit acknowledges the message.
 
 **Consumer.** Use `ackMode: SESSION_TRANSACTED`. Receiving or acknowledging inside a block joins it.
 
@@ -222,6 +224,10 @@ Good to know:
   messages received before the block.
 - Producers commit first. If one fails, the rest roll back and the messages are redelivered.
 - Commits aren't atomic across sessions or with a database, so handle duplicates.
+- If ActiveMQ fails to commit, other resources in the same block, such as a database, can still commit,
+  depending on the runtime version. A message sent in that block is then lost. If the database write
+  and the message must both happen, use the outbox pattern: store the message with the database write,
+  and send it in a separate step.
 - Outside a block, transacted listeners and consumers settle with `'commit()` and `'rollback()`.
 - `receive()` on a non-transacted consumer isn't part of the block.
 

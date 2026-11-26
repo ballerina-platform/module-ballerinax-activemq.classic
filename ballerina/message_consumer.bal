@@ -113,7 +113,7 @@ public isolated client class MessageConsumer {
     # + message - The message to acknowledge
     # + return - `classic:Error` if it fails. Inside a `transaction` block, also if the consumer isn't
     #            transacted, if another consumer received the message, or if the consumer is in use
-    #            elsewhere; `()` otherwise
+    #            elsewhere, `()` otherwise
     isolated remote function acknowledge(Message message) returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.consumer.Actions"
     } external;

@@ -69,7 +69,7 @@ public isolated client class MessageProducer {
     #                 configured default destination, if any
     # + return - `classic:Error` if sending fails, if a transacted producer sends outside a
     #            `transaction` block or a non-transacted one sends inside, or if the producer is in
-    #            another transaction; `()` otherwise
+    #            another transaction, `()` otherwise
     isolated remote function send(Message message, Destination? destination = ()) returns Error? {
         check validateMessage(message);
         return self.externSend(message, destination);

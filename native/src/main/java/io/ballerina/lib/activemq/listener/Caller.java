@@ -39,7 +39,6 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
  * @since 0.1.0
  */
 public class Caller {
-    // Set on the callers and messages of a transacted session.
     static final String NATIVE_TRANSACTION_CONTEXT = "native.transaction.context";
 
     private Caller() {

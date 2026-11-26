@@ -121,6 +121,8 @@ final class TransactionBlock implements BallerinaTransactionContext {
             }
         }
         if (failure != null) {
+            // Newer runtimes report a failed commit to the user only as "hazard", without this cause.
+            ERR_OUT.println(failure.getMessage());
             throw failure;
         }
     }

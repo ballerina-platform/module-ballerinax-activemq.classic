@@ -52,7 +52,6 @@ public final class Actions {
         final MessageProducer producer;
         final BMap<BString, Object> defaultDestination;
         final Object sessionLock = new Object();
-        // Non-null only for a transacted producer.
         final SessionTransactionContext transactionContext;
         volatile boolean closed = false;
 

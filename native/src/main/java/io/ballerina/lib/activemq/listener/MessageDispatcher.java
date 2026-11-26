@@ -56,7 +56,6 @@ public class MessageDispatcher {
     private final Runtime ballerinaRuntime;
     private final Service nativeService;
     private final Session session;
-    // Shared by the service's callers. Non-null only for a transacted session.
     private final SessionTransactionContext transactionContext;
     private final OnErrorCallback onErrorCallback = new OnErrorCallback();
 

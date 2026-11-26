@@ -53,7 +53,6 @@ public final class Actions {
         final Connection connection;
         final MessageConsumer consumer;
         final Object sessionLock = new Object();
-        // Non-null only for a transacted consumer.
         final SessionTransactionContext transactionContext;
         volatile boolean closed = false;
 
@@ -148,7 +147,13 @@ public final class Actions {
         }
     }
 
-    /** Acknowledges a message. Inside a transaction, the consumer joins it and the commit acknowledges. */
+    /**
+     * Acknowledges a message. Inside a transaction, the consumer joins it and the commit acknowledges.
+     *
+     * @param bConsumer the Ballerina consumer object
+     * @param message   the Ballerina message record to acknowledge
+     * @return null on success, BError on failure
+     */
     public static Object acknowledge(BObject bConsumer, BMap<BString, Object> message) {
         // Must run on the calling strand.
         if (TransactionResourceManager.getInstance().isInTransaction()) {
