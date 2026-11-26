@@ -61,8 +61,8 @@ function testListenerStopDoesNotLoseAutoAckMessages() returns error? {
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
     foreach int i in 1 ... STOP_LOSS_MESSAGE_COUNT {
-        check prod->send({payload: string `${idPrefix}${i}`.toBytes(), properties: {"stopLossRun": runId}},
-            {queueName: STOP_LOSS_QUEUE});
+        check prod->send(string `${idPrefix}${i}`.toBytes(), {queueName: STOP_LOSS_QUEUE},
+                properties = {"stopLossRun": runId});
     }
     check prod->close();
 

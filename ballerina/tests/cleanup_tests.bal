@@ -49,10 +49,7 @@ function testItNoMessageLossHappyPath() returns error? {
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
     int messageCount = 10;
     foreach int i in 1 ... messageCount {
-        check prod->send({
-            messageId: string `it-cleanup-${i}`,
-            payload: string `message-${i}`.toBytes()
-        }, {queueName: "it.cleanup.nomsg.queue"});
+        check prod->send(string `message-${i}`.toBytes(), {queueName: "it.cleanup.nomsg.queue"});
     }
     check prod->close();
 
@@ -92,10 +89,7 @@ function testItListenerServiceCleanup() returns error? {
     check cleanupListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-cleanup-svc-01",
-        payload: "cleanup test".toBytes()
-    }, {queueName: "it.cleanup.listener.queue"});
+    check prod->send("cleanup test".toBytes(), {queueName: "it.cleanup.listener.queue"});
     check prod->close();
 
     runtime:sleep(4);
@@ -172,10 +166,7 @@ function testItListenerDetachStopsDelivery() returns error? {
     check detachDeliveryListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-detach-stops-delivery-01",
-        payload: "before detach".toBytes()
-    }, {queueName: "it.cleanup.detach.stops.delivery.queue"});
+    check prod->send("before detach".toBytes(), {queueName: "it.cleanup.detach.stops.delivery.queue"});
 
     runtime:sleep(3);
     int countBeforeDetach = 0;
@@ -184,10 +175,7 @@ function testItListenerDetachStopsDelivery() returns error? {
 
     check detachDeliveryListener.detach(detachDeliverySvc);
 
-    check prod->send({
-        messageId: "it-detach-stops-delivery-02",
-        payload: "after detach".toBytes()
-    }, {queueName: "it.cleanup.detach.stops.delivery.queue"});
+    check prod->send("after detach".toBytes(), {queueName: "it.cleanup.detach.stops.delivery.queue"});
     check prod->close();
 
     runtime:sleep(3);

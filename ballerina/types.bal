@@ -80,8 +80,8 @@ public type ConnectionConfiguration record {
 
 # Configuration for an ActiveMQ message producer.
 #
-# + transacted - Enables transacted messaging. Messages are sent within a transaction context,
-#                requiring an explicit commit or rollback
+# + transacted - Sends messages as part of a `transaction` block. They are delivered on commit and
+#                discarded on rollback
 # + destination - The default destination (queue or topic) to publish to. Can be omitted and/or
 #                 overridden per call via the `destination` parameter of `MessageProducer.send()`
 public type ProducerConfiguration record {|
@@ -167,67 +167,61 @@ public type CertKey record {|
     string keyPassword?;
 |};
 
+# The message settings that a sender can set.
+#
+# + correlationId - Identifier used to correlate this message with another
+# + replyTo - Queue or topic where replies should be sent
+# + persistent - `true` to survive broker restarts, `false` to send faster without persistence
+# + 'type - Application-defined message type, used for classification and filtering
+# + expiry - Timestamp (in milliseconds since epoch) when the message expires, or 0 if it doesn't
+#            expire
+# + priority - Message priority level (0-9, where 0-4 is normal and 5-9 is expedited)
+# + properties - Application-specific properties attached to the message
+# + scheduledDelay - Delay in milliseconds before the first delivery. Scheduling requires
+#                    `schedulerSupport="true"` in the broker configuration
+# + scheduledPeriod - Period in milliseconds between deliveries
+# + scheduledRepeat - Number of additional deliveries after the first. `-1` repeats forever. Requires
+#                     `scheduledPeriod`
+# + scheduledCron - Cron expression in the five-field format (e.g., `"0 12 * * *"` for every day at 12:00).
+#                   The other schedule settings then apply each time it fires
+public type SendOptions record {|
+    string correlationId?;
+    Destination replyTo?;
+    boolean persistent?;
+    string 'type?;
+    int expiry?;
+    int priority?;
+    map<Property> properties?;
+    int scheduledDelay?;
+    int scheduledPeriod?;
+    int scheduledRepeat?;
+    string scheduledCron?;
+|};
+
 # Represents a message received from an ActiveMQ broker.
 #
 # + messageId - Unique identifier assigned to the message by the JMS provider
 # + timestamp - The time when the message was handed to the provider to be sent (in milliseconds
 #               since epoch)
-# + correlationId - Optional identifier used to correlate this message with another (typically used
-#                   in request-reply patterns)
-# + replyTo - Queue or topic where replies should be sent
 # + destination - Queue or topic where the message was sent
-# + persistent - Message delivery mode: true for persistent (survives broker restarts), false for
-#                non-persistent (faster but may be lost on broker failure)
 # + redelivered - Indicates whether this message is being redelivered after a previous delivery
 #                 attempt failed
-# + 'type - Message type identifier string (provider-specific or application-defined) used for
-#           message classification and filtering
-# + expiry - Timestamp (in milliseconds since epoch) when the message expires, or 0 if it doesn't
-#            expire
 # + deliveryTime - The earliest time when the message can be delivered to a consumer (in
 #                  milliseconds since epoch), or 0 if no delivery delay
-# + priority - Message priority level (0-9, where 0-4 is normal priority and 5-9 is expedited
-#              priority)
 # + userId - Identifier of the user who sent the message (if available from the broker)
 # + format - Format identifier of the message payload (e.g., "text", "binary", "json")
-# + properties - Application-specific custom properties attached to the message. Values are
-#                restricted to the types the JMS specification allows as message properties
-# + payload - The message content. On send, the runtime type determines the JMS message produced
-#             (`string`/`xml` → `TextMessage`, `byte[]` → `BytesMessage`, `map`/record → `MapMessage`).
-#             In a map or record, only `string`, `int`, `float`, `boolean`, `byte` and `byte[]`
-#             values are kept; `()` values are dropped silently and others with a warning, so the
-#             payload may be incomplete.
-#             On receive, defaults to the JMS-message-appropriate representation unless narrowed
+# + payload - The message content. Defaults to the JMS-message-appropriate representation unless narrowed
 #             via `MessageConsumer.receive`'s `typedesc<Message> T` parameter
-# + scheduledDelay - Delay in milliseconds before the broker first delivers the message.
-#                   Requires `schedulerSupport="true"` in the ActiveMQ broker configuration.
-# + scheduledPeriod - Period in milliseconds between successive redeliveries. Use together
-#                    with `scheduledRepeat` for periodic delivery.
-# + scheduledRepeat - Number of additional deliveries after the first. Use `-1` for
-#                    infinite repetition. Requires `scheduledPeriod` to be set.
-# + scheduledCron - Cron expression controlling the delivery schedule
-#                  (for example, `"0 0 12 * * ?"`). Overrides delay/period/repeat when set.
-#                  Requires the broker scheduler to be enabled.
 public type Message record {|
+    *SendOptions;
     string messageId?;
     int timestamp?;
-    string correlationId?;
-    Destination replyTo?;
     Destination destination?;
-    boolean persistent?;
     boolean redelivered?;
-    string 'type?;
-    int expiry?;
     int deliveryTime?;
-    int priority?;
     string userId?;
     string format?;
-    map<Property> properties?;
     anydata payload;
-    int scheduledDelay?;
-    int scheduledPeriod?;
-    int scheduledRepeat?;
-    string scheduledCron?;
 |};
 
 # Represents the allowed value types for a JMS message property, and for a typed `MapMessage` entry.
@@ -245,8 +239,8 @@ public enum ConsumerType {
 
 # Defines the JMS session acknowledgement modes.
 public enum AcknowledgementMode {
-    # Indicates that the session will use a local transaction which may subsequently be
-    # committed or rolled back by calling the session's `commit` or `rollback` methods.
+    # Indicates that the session uses a local transaction. Settle it with a `transaction` block, or
+    # with the `commit` and `rollback` methods outside one.
     SESSION_TRANSACTED,
     # Indicates that the session automatically acknowledges a client's receipt of a message
     # either when the session has successfully returned from a call to `receive` or when the
@@ -280,7 +274,8 @@ public enum AcknowledgementMode {
 # + useExponentialBackOff - When enabled, increases the delay between redelivery attempts
 #                           exponentially using the backOffMultiplier
 # + backOffMultiplier - Multiplier applied to the delay on each redelivery when exponential backoff
-#                       is enabled (e.g., 5.0 means each retry delay is 5x the previous)
+#                       is enabled (e.g., 5.0 means each retry delay is 5x the previous). Has no
+#                       effect at 1.0 or below
 # + redeliveryDelay - The base delay (in milliseconds) between redelivery attempts
 # + preDispatchCheck - When enabled, checks the dispatch policy before redelivering a message
 public type RedeliveryPolicy record {|

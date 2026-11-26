@@ -53,10 +53,7 @@ function testItListenerReceivesTextMessage() returns error? {
     check itListener.attach(listenerTextSvc, "it-listener-text-svc");
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-listener-text-01",
-        payload: "Listener integration test".toBytes()
-    }, {queueName: "it.listener.text.queue"});
+    check prod->send("Listener integration test".toBytes(), {queueName: "it.listener.text.queue"});
     check prod->close();
 
     runtime:sleep(5);
@@ -90,10 +87,7 @@ function testItListenerReceivesMultipleMessages() returns error? {
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
     foreach int i in 1 ... 5 {
-        check prod->send({
-            messageId: string `order-${i}`,
-            payload: string `msg-${i}`.toBytes()
-        }, {queueName: "it.listener.order.queue"});
+        check prod->send(string `msg-${i}`.toBytes(), {queueName: "it.listener.order.queue"});
     }
     check prod->close();
 
@@ -145,10 +139,7 @@ function testItListenerGracefulStop() returns error? {
     check stopListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-stop-pre-01",
-        payload: "before-stop".toBytes()
-    }, {queueName: "it.listener.stop.queue"});
+    check prod->send("before-stop".toBytes(), {queueName: "it.listener.stop.queue"});
     runtime:sleep(4);
 
     int countBeforeStop = 0;
@@ -158,10 +149,7 @@ function testItListenerGracefulStop() returns error? {
 
     check stopListener.gracefulStop();
 
-    check prod->send({
-        messageId: "it-stop-post-01",
-        payload: "after-stop".toBytes()
-    }, {queueName: "it.listener.stop.queue"});
+    check prod->send("after-stop".toBytes(), {queueName: "it.listener.stop.queue"});
     check prod->close();
     runtime:sleep(3);
 
@@ -187,10 +175,7 @@ function testItListenerPushDeliveryIsFast() returns error? {
     check itListener.attach(pushSvc, "it-push-svc");
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-push-01",
-        payload: "push delivery".toBytes()
-    }, {queueName: "it.listener.push.queue"});
+    check prod->send("push delivery".toBytes(), {queueName: "it.listener.push.queue"});
     check prod->close();
 
     runtime:sleep(1);
@@ -231,10 +216,7 @@ function testItListenerSequentialProcessing() returns error? {
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
     foreach int i in 1 ... 5 {
-        check prod->send({
-            messageId: string `seq-${i}`,
-            payload: string `msg-${i}`.toBytes()
-        }, {queueName: "it.listener.sequential.queue"});
+        check prod->send(string `msg-${i}`.toBytes(), {queueName: "it.listener.sequential.queue"});
     }
     check prod->close();
 
@@ -271,10 +253,7 @@ function testItListenerUnsupportedMessageTypeDoesNotHang() returns error? {
     check sendObjectMessageToQueue(brokerUrl, "it.listener.objmsg.queue", "unsupported-payload");
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-objmsg-followup",
-        payload: "still alive".toBytes()
-    }, {queueName: "it.listener.objmsg.queue"});
+    check prod->send("still alive".toBytes(), {queueName: "it.listener.objmsg.queue"});
     check prod->close();
 
     int textCount = 0;
@@ -323,10 +302,7 @@ function testItListenerFailingOnErrorDoesNotCrashRuntime() returns error? {
     runtime:sleep(2);
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-unrelated-01",
-        payload: "unrelated service still alive".toBytes()
-    }, {queueName: "it.listener.unrelated.queue"});
+    check prod->send("unrelated service still alive".toBytes(), {queueName: "it.listener.unrelated.queue"});
     check prod->close();
 
     runtime:sleep(3);
@@ -357,10 +333,7 @@ function testItListenerReturnedErrorGoesToOnError() returns error? {
     check itListener.attach(returnedErrorSvc, "it-returnederror-svc");
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-returnederror-01",
-        payload: "trigger returned error".toBytes()
-    }, {queueName: "it.listener.returnederror.queue"});
+    check prod->send("trigger returned error".toBytes(), {queueName: "it.listener.returnederror.queue"});
     check prod->close();
 
     runtime:sleep(3);
@@ -396,19 +369,13 @@ function testItListenerOnMessagePanicDoesNotGoToOnError() returns error? {
     check itListener.attach(panicSvc, "it-panic-svc");
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-panic-01",
-        payload: "trigger panic".toBytes()
-    }, {queueName: "it.listener.panic.queue"});
+    check prod->send("trigger panic".toBytes(), {queueName: "it.listener.panic.queue"});
     check prod->close();
 
     runtime:sleep(3);
 
     MessageProducer prod2 = check new (brokerUrl, username = username, password = password);
-    check prod2->send({
-        messageId: "it-panic-followup",
-        payload: "still alive".toBytes()
-    }, {queueName: "it.listener.panic.queue"});
+    check prod2->send("still alive".toBytes(), {queueName: "it.listener.panic.queue"});
     check prod2->close();
 
     int followupCount = 0;

@@ -46,10 +46,7 @@ function testItAckAutoAcknowledge() returns error? {
     check ackAutoListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-ack-auto-01",
-        payload: "auto-ack message".toBytes()
-    }, {queueName: "it.ack.auto.queue"});
+    check prod->send("auto-ack message".toBytes(), {queueName: "it.ack.auto.queue"});
     check prod->close();
 
     runtime:sleep(5);
@@ -85,10 +82,7 @@ function testItAckClientAcknowledgeExplicit() returns error? {
     check ackClientListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-ack-client-01",
-        payload: "client-ack message".toBytes()
-    }, {queueName: "it.ack.client.queue"});
+    check prod->send("client-ack message".toBytes(), {queueName: "it.ack.client.queue"});
     check prod->close();
 
     runtime:sleep(5);
@@ -109,10 +103,7 @@ function testItAckClientAcknowledgeRecover() returns error? {
     lock { itAckRecoverSecondCount = 0; }
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-ack-recover-01",
-        payload: "recover test".toBytes()
-    }, {queueName: "it.ack.recover.queue"});
+    check prod->send("recover test".toBytes(), {queueName: "it.ack.recover.queue"});
     check prod->close();
 
     Listener listener1 = check new (brokerUrl, username = username, password = password);
@@ -184,10 +175,7 @@ function testItAckDupsOkAcknowledge() returns error? {
     check dupsOkListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({
-        messageId: "it-ack-dups-01",
-        payload: "dups-ok message".toBytes()
-    }, {queueName: "it.ack.dups.queue"});
+    check prod->send("dups-ok message".toBytes(), {queueName: "it.ack.dups.queue"});
     check prod->close();
 
     runtime:sleep(5);
@@ -204,17 +192,26 @@ isolated int itAckClientBindFailErrorCount = 0;
 isolated int itAckTxBindFailGoodCount = 0;
 isolated int itAckTxBindFailErrorCount = 0;
 
-isolated function waitForCounts(isolated function () returns [int, int] readCounts,
-        int expectedGood, int expectedError, decimal timeoutSeconds = 15) {
+// Polls `condition` until it holds or the timeout passes. Returns whether it held.
+isolated function waitUntil(isolated function () returns boolean condition, decimal timeoutSeconds = 15)
+        returns boolean {
     decimal waited = 0;
-    while waited < timeoutSeconds {
-        [int, int] [good, errs] = readCounts();
-        if good >= expectedGood && errs >= expectedError {
-            return;
+    while !condition() {
+        if waited >= timeoutSeconds {
+            return false;
         }
         runtime:sleep(0.25d);
         waited += 0.25d;
     }
+    return true;
+}
+
+isolated function waitForCounts(isolated function () returns [int, int] readCounts,
+        int expectedGood, int expectedError, decimal timeoutSeconds = 15) {
+    _ = waitUntil(isolated function () returns boolean {
+        [int, int] [good, errs] = readCounts();
+        return good >= expectedGood && errs >= expectedError;
+    }, timeoutSeconds);
 }
 
 // A message that fails data binding never reaches onMessage, so the service has no Caller to roll it
@@ -252,8 +249,8 @@ function testItAckClientAcknowledgeBindingFailureIsDeadLettered() returns error?
     check bindFailListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({payload: "binding fails".toBytes(), properties: {"testTag": testTag}}, {queueName});
-    check prod->send({payload: "binding succeeds"}, {queueName});
+    check prod->send("binding fails".toBytes(), {queueName}, properties = {"testTag": testTag});
+    check prod->send("binding succeeds", {queueName});
     check prod->close();
 
     waitForCounts(isolated function () returns [int, int] {
@@ -310,8 +307,8 @@ function testItAckSessionTransactedBindingFailureIsDeadLettered() returns error?
     check bindFailListener.'start();
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({payload: "binding fails".toBytes(), properties: {"testTag": testTag}}, {queueName});
-    check prod->send({payload: "binding succeeds"}, {queueName});
+    check prod->send("binding fails".toBytes(), {queueName}, properties = {"testTag": testTag});
+    check prod->send("binding succeeds", {queueName});
     check prod->close();
 
     waitForCounts(isolated function () returns [int, int] {
@@ -377,7 +374,7 @@ function testItAckUnreadableObjectMessageKeepsListenerConnection() returns error
     runtime:sleep(1);
 
     MessageProducer prod = check new (brokerUrl, username = username, password = password);
-    check prod->send({payload: "delivered after the poison ack"}, {queueName});
+    check prod->send("delivered after the poison ack", {queueName});
     check prod->close();
 
     waitForCounts(isolated function () returns [int, int] {

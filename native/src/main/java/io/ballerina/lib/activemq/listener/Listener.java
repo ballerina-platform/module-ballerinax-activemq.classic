@@ -18,6 +18,7 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import io.ballerina.lib.activemq.LoggingExceptionListener;
 import io.ballerina.lib.activemq.util.ConnectionConfig;
 import io.ballerina.lib.activemq.util.ConnectionFactoryUtils;
 import io.ballerina.runtime.api.Environment;
@@ -69,15 +70,24 @@ public final class Listener {
      * @return null on success, BError on failure
      */
     public static Object init(BObject bListener, BString url, BMap<BString, Object> configurations) {
+        Connection connection = null;
         try {
             ConnectionConfig config = new ConnectionConfig(configurations);
             ActiveMQConnectionFactory factory = ConnectionFactoryUtils.createConnectionFactory(
                     url.getValue(), config);
 
-            Connection connection = factory.createConnection();
+            connection = factory.createConnection();
+            connection.setExceptionListener(new LoggingExceptionListener());
             bListener.addNativeData(NATIVE_CONNECTION, connection);
             bListener.addNativeData(NATIVE_SERVICE_LIST, new ArrayList<BObject>());
         } catch (Exception e) {
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (JMSException closeError) {
+                    e.addSuppressed(closeError);
+                }
+            }
             return createError(ACTIVEMQ_ERROR, String.format("Failed to initialize listener: %s", e.getMessage()), e);
         }
         return null;
@@ -113,7 +123,8 @@ public final class Listener {
             session = connection.createSession(sessionAckMode);
             consumer = getConsumer(session, svcConfig);
 
-            MessageDispatcher messageDispatcher = new MessageDispatcher(env.getRuntime(), nativeService, session);
+            MessageDispatcher messageDispatcher = new MessageDispatcher(env.getRuntime(), nativeService, session,
+                    sessionAckMode == Session.SESSION_TRANSACTED);
             MessageReceiver receiver = new MessageReceiver(session, consumer, messageDispatcher);
             messageDispatcher.setReceiver(receiver);
             completeAttachment(Boolean.TRUE.equals(started), receiver, consumer, session, () -> {

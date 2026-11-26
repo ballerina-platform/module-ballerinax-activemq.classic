@@ -25,10 +25,7 @@ listener Listener clientTestListener = check new Listener(BROKER_URL);
 }
 isolated function testClientSendAndReceiveFromQueue() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "basic-1",
-        payload: "Hello ActiveMQ".toBytes()
-    }, {queueName: "client.test.basic.queue"});
+    check producer->send("Hello ActiveMQ".toBytes(), {queueName: "client.test.basic.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.basic.queue"});
@@ -58,10 +55,7 @@ isolated function testClientMultipleMessages() returns error? {
     MessageProducer producer = check new (BROKER_URL);
     string[] payloads = ["First", "Second", "Third"];
     foreach string p in payloads {
-        check producer->send({
-            messageId: p,
-            payload: p.toBytes()
-        }, {queueName: "client.test.multi.queue"});
+        check producer->send(p.toBytes(), {queueName: "client.test.multi.queue"});
     }
     check producer->close();
 
@@ -82,18 +76,12 @@ isolated function testClientMultipleMessages() returns error? {
 }
 isolated function testClientMessageFieldsRoundtrip() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "fields-1",
-        payload: "Roundtrip payload".toBytes(),
-        correlationId: "corr-abc-123",
-        'type: "TestOrder",
-        persistent: true,
-        priority: 7,
-        properties: {
-            "category": "electronics",
-            "region": "APAC"
-        }
-    }, {queueName: "client.test.fields.queue"});
+    check producer->send("Roundtrip payload".toBytes(), {queueName: "client.test.fields.queue"},
+            correlationId = "corr-abc-123", 'type = "TestOrder", persistent = true, priority = 7,
+            properties = {
+                "category": "electronics",
+                "region": "APAC"
+            });
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.fields.queue"});
@@ -121,11 +109,8 @@ isolated function testClientMessageFieldsRoundtrip() returns error? {
 }
 isolated function testClientPriorityZeroRoundtrips() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "priority-zero-1",
-        payload: "priority zero payload".toBytes(),
-        priority: 0
-    }, {queueName: "client.test.priorityzero.queue"});
+    check producer->send(
+            "priority zero payload".toBytes(), {queueName: "client.test.priorityzero.queue"}, priority = 0);
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.priorityzero.queue"});
@@ -142,16 +127,9 @@ isolated function testClientPriorityZeroRoundtrips() returns error? {
 }
 isolated function testClientPersistenceField() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "p-1",
-        payload: "persistent".toBytes(),
-        persistent: true
-    }, {queueName: "client.test.persist.queue"});
-    check producer->send({
-        messageId: "np-1",
-        payload: "non-persistent".toBytes(),
-        persistent: false
-    }, {queueName: "client.test.nonpersist.queue"});
+    check producer->send("persistent".toBytes(), {queueName: "client.test.persist.queue"}, persistent = true);
+    check producer->send(
+            "non-persistent".toBytes(), {queueName: "client.test.nonpersist.queue"}, persistent = false);
     check producer->close();
 
     MessageConsumer persistConsumer = check new (BROKER_URL, destination = {queueName: "client.test.persist.queue"});
@@ -178,11 +156,8 @@ isolated function testClientPersistenceField() returns error? {
 }
 isolated function testClientReplyToField() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "rr-1",
-        payload: "Request".toBytes(),
-        replyTo: {queueName: "client.test.reply.queue"}
-    }, {queueName: "client.test.replyto.queue"});
+    check producer->send("Request".toBytes(), {queueName: "client.test.replyto.queue"},
+            replyTo = {queueName: "client.test.reply.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.replyto.queue"});
@@ -218,10 +193,7 @@ isolated function testClientSendToTopic() returns error? {
     runtime:sleep(2);
 
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "topic-msg-1",
-        payload: "Topic message from producer".toBytes()
-    }, {topicName: "client.test.topic"});
+    check producer->send("Topic message from producer".toBytes(), {topicName: "client.test.topic"});
     check producer->close();
 
     runtime:sleep(2);
@@ -237,10 +209,7 @@ isolated function testClientSendToTopic() returns error? {
 isolated function testClientClose() returns error? {
     MessageProducer producer = check new (BROKER_URL);
     check producer->close();
-    Error? result = producer->send({
-        messageId: "after-close",
-        payload: "should fail".toBytes()
-    }, {queueName: "client.test.close.queue"});
+    Error? result = producer->send("should fail".toBytes(), {queueName: "client.test.close.queue"});
     test:assertTrue(result is Error, "send after close should return an Error");
 }
 
@@ -249,7 +218,7 @@ isolated function testClientClose() returns error? {
 }
 isolated function testClientSendToEmptyTopicName() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    Error? result = producer->send({payload: "empty topic name"}, {topicName: ""});
+    Error? result = producer->send("empty topic name", {topicName: ""});
     check producer->close();
     test:assertTrue(result is Error, "sending to an empty topic name should return an Error, not panic");
     if result is Error {
@@ -263,10 +232,8 @@ isolated function testClientSendToEmptyTopicName() returns error? {
 }
 isolated function testClientSendWithEmptyPropertyName() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    Error? result = producer->send({
-        payload: "empty property name",
-        properties: {"": "invalid-property-name"}
-    }, {queueName: "client.test.empty.property.queue"});
+    Error? result = producer->send("empty property name", {queueName: "client.test.empty.property.queue"},
+            properties = {"": "invalid-property-name"});
     check producer->close();
     test:assertTrue(result is Error, "sending with an empty property name should return an Error, not panic");
     if result is Error {
@@ -279,10 +246,7 @@ isolated function testClientSendWithEmptyPropertyName() returns error? {
 }
 isolated function testClientBrokerPopulatedFields() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "sent-id",
-        payload: "Broker fields test".toBytes()
-    }, {queueName: "client.test.broker.fields.queue"});
+    check producer->send("Broker fields test".toBytes(), {queueName: "client.test.broker.fields.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -308,16 +272,10 @@ isolated function testClientBrokerPopulatedFields() returns error? {
 }
 isolated function testClientReceiveWithSelector() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "sel-apac",
-        payload: "APAC order".toBytes(),
-        properties: {"region": "APAC"}
-    }, {queueName: "client.test.selector.queue"});
-    check producer->send({
-        messageId: "sel-emea",
-        payload: "EMEA order".toBytes(),
-        properties: {"region": "EMEA"}
-    }, {queueName: "client.test.selector.queue"});
+    check producer->send("APAC order".toBytes(), {queueName: "client.test.selector.queue"},
+            properties = {"region": "APAC"});
+    check producer->send("EMEA order".toBytes(), {queueName: "client.test.selector.queue"},
+            properties = {"region": "EMEA"});
     check producer->close();
 
     MessageConsumer apacConsumer = check new (BROKER_URL,
@@ -343,10 +301,7 @@ isolated function testClientReceiveWithSelector() returns error? {
 }
 isolated function testClientReceiveWithoutSelector() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "no-sel-1",
-        payload: "no selector".toBytes()
-    }, {queueName: "client.test.no.selector.queue"});
+    check producer->send("no selector".toBytes(), {queueName: "client.test.no.selector.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -357,77 +312,12 @@ isolated function testClientReceiveWithoutSelector() returns error? {
 }
 
 @test:Config {
-    groups: ["client", "transaction"]
-}
-isolated function testClientTransactionCommit() returns error? {
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-1",
-        payload: "tx message 1".toBytes()
-    }, {queueName: "client.tx.commit.queue"});
-    check producer->send({
-        messageId: "tx-2",
-        payload: "tx message 2".toBytes()
-    }, {queueName: "client.tx.commit.queue"});
-    check producer->'commit();
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.commit.queue"});
-    Message? msg1 = check consumer->receive(5000);
-    Message? msg2 = check consumer->receive(5000);
-    check consumer->close();
-
-    test:assertTrue(msg1 is Message, "first committed message should be received");
-    test:assertTrue(msg2 is Message, "second committed message should be received");
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
-isolated function testClientTransactionRollback() returns error? {
-    check drainQueue("client.tx.rollback.queue");
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-rb-1",
-        payload: "will be discarded".toBytes()
-    }, {queueName: "client.tx.rollback.queue"});
-    check producer->'rollback();
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.rollback.queue"});
-    Message? msg = check consumer->receive(2000);
-    check consumer->close();
-    test:assertTrue(msg is (), "rolled-back message must not be delivered");
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
-isolated function testClientTransactionCloseRollsBack() returns error? {
-    check drainQueue("client.tx.close.queue");
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-close-1",
-        payload: "implicit rollback".toBytes()
-    }, {queueName: "client.tx.close.queue"});
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.close.queue"});
-    Message? msg = check consumer->receive(2000);
-    check consumer->close();
-    test:assertTrue(msg is (), "closing a transaction without committing must roll back");
-}
-
-@test:Config {
     groups: ["client", "scheduler"]
 }
 function testClientScheduledDelivery() returns error? {
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        messageId: "sched-1",
-        payload: "scheduled message".toBytes(),
-        scheduledDelay: 4000
-    }, {queueName: "client.scheduled.queue"});
+    check producer->send(
+            "scheduled message".toBytes(), {queueName: "client.scheduled.queue"}, scheduledDelay = 4000);
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.scheduled.queue"});
@@ -446,16 +336,14 @@ function testClientScheduledDelivery() returns error? {
 isolated function testClientPropertyTypesRoundtrip() returns error? {
     MessageProducer producer = check new (BROKER_URL);
     byte byteProp = 200;
-    check producer->send({
-        payload: "property types".toBytes(),
-        properties: {
-            "strProp": "hello",
-            "intProp": 42,
-            "boolProp": true,
-            "floatProp": 3.5,
-            "byteProp": byteProp
-        }
-    }, {queueName: "client.test.propertytypes.queue"});
+    check producer->send("property types".toBytes(), {queueName: "client.test.propertytypes.queue"},
+            properties = {
+                "strProp": "hello",
+                "intProp": 42,
+                "boolProp": true,
+                "floatProp": 3.5,
+                "byteProp": byteProp
+            });
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -486,13 +374,11 @@ isolated function testClientPropertyTypesRoundtrip() returns error? {
 isolated function testClientSendWithUnsupportedPropertyTypeDoesNotFail() returns error? {
     check drainQueue("client.test.unsupportedprop.queue");
     MessageProducer producer = check new (BROKER_URL);
-    check producer->send({
-        payload: "unsupported property".toBytes(),
-        properties: {
-            "strProp": "hello",
-            "bytesProp": "unsupported".toBytes()
-        }
-    }, {queueName: "client.test.unsupportedprop.queue"});
+    check producer->send("unsupported property".toBytes(), {queueName: "client.test.unsupportedprop.queue"},
+            properties = {
+                "strProp": "hello",
+                "bytesProp": "unsupported".toBytes()
+            });
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -517,7 +403,7 @@ isolated function testClientSendXmlPayloadRoundTrips() returns error? {
     check drainQueue("client.test.xml.queue");
     MessageProducer producer = check new (BROKER_URL);
     xml payload = xml `<order><id>ORD-1</id></order>`;
-    check producer->send({payload}, {queueName: "client.test.xml.queue"});
+    check producer->send(payload, {queueName: "client.test.xml.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.test.xml.queue"});
@@ -536,7 +422,7 @@ isolated function testClientSendXmlSequenceRoundTrips() returns error? {
     check drainQueue("client.test.xml.seq.queue");
     MessageProducer producer = check new (BROKER_URL);
     xml payload = xml `<a/><b/>`;
-    check producer->send({payload}, {queueName: "client.test.xml.seq.queue"});
+    check producer->send(payload, {queueName: "client.test.xml.seq.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -556,7 +442,7 @@ isolated function testClientSendXmlElementPayloadRoundTrips() returns error? {
     check drainQueue("client.test.xml.element.queue");
     MessageProducer producer = check new (BROKER_URL);
     xml:Element payload = xml `<order><id>ORD-2</id></order>`;
-    check producer->send({payload}, {queueName: "client.test.xml.element.queue"});
+    check producer->send(payload, {queueName: "client.test.xml.element.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -576,7 +462,7 @@ isolated function testClientSendXmlSequenceToElementFails() returns error? {
     check drainQueue("client.test.xml.seq.element.queue");
     MessageProducer producer = check new (BROKER_URL);
     xml payload = xml `<a/><b/>`;
-    check producer->send({payload}, {queueName: "client.test.xml.seq.element.queue"});
+    check producer->send(payload, {queueName: "client.test.xml.seq.element.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (BROKER_URL,
@@ -594,8 +480,8 @@ isolated function testClientSendMapWithNonByteArrayEntryDoesNotPanic() returns e
     MessageProducer producer = check new (BROKER_URL);
     map<anydata> mapPayload = {"orderId": "ORD-1", "tags": ["a", "b"], "tuple": [1, "two"]};
     json jsonPayload = {"orderId": "ORD-2", "items": [1, 2]};
-    Error? mapResult = producer->send({payload: mapPayload}, {queueName: "client.test.map.array.queue"});
-    Error? jsonResult = producer->send({payload: jsonPayload}, {queueName: "client.test.map.array.queue"});
+    Error? mapResult = producer->send(mapPayload, {queueName: "client.test.map.array.queue"});
+    Error? jsonResult = producer->send(jsonPayload, {queueName: "client.test.map.array.queue"});
     check producer->close();
     test:assertFalse(mapResult is Error, "a map with a string[] entry should send, not panic");
     test:assertFalse(jsonResult is Error, "a json object with an array entry should send, not panic");
@@ -623,12 +509,9 @@ function testConcurrentProducerSendIsThreadSafe() returns error? {
     check drainQueue(queueName);
     MessageProducer producer = check new (BROKER_URL);
 
-    future<Error?> f1 = start producer->send({messageId: "conc-1", payload: "one".toBytes()},
-            {queueName: queueName});
-    future<Error?> f2 = start producer->send({messageId: "conc-2", payload: "two".toBytes()},
-            {queueName: queueName});
-    future<Error?> f3 = start producer->send({messageId: "conc-3", payload: "three".toBytes()},
-            {queueName: queueName});
+    future<Error?> f1 = start producer->send("one".toBytes(), {queueName: queueName});
+    future<Error?> f2 = start producer->send("two".toBytes(), {queueName: queueName});
+    future<Error?> f3 = start producer->send("three".toBytes(), {queueName: queueName});
 
     Error? r1 = wait f1;
     Error? r2 = wait f2;
@@ -672,45 +555,10 @@ function testReceiveDoesNotDeadlockClose() returns error? {
 @test:Config {
     groups: ["client", "transaction"]
 }
-isolated function testClientTransactionCommitAfterCloseReturnsError() returns error? {
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->close();
-    Error? result = producer->'commit();
-    test:assertTrue(result is Error, "commit after close should return an Error, not panic");
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
 isolated function testClientTransactionDoubleCloseIdempotent() returns error? {
     MessageProducer producer = check new (BROKER_URL, transacted = true);
     check producer->close();
     do { check producer->close(); } on fail { }
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
-function testClientTransactionRollbackAfterSendFailure() returns error? {
-    string queueName = "client.tx.sendfailure.queue";
-    check drainQueue(queueName);
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-fail-1",
-        payload: "will never be committed".toBytes()
-    }, {queueName});
-
-    Error? result = producer->send({payload: "will fail".toBytes(), priority: 15}, {queueName});
-    test:assertTrue(result is Error, "sending with an invalid priority should fail, not panic");
-
-    check producer->'rollback();
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName});
-    Message? msg = check consumer->receive(2000);
-    check consumer->close();
-    test:assertTrue(msg is (),
-        "rollback after a send failure must discard the whole transaction, including the earlier message");
 }
 
 @test:Config {

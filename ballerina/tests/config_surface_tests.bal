@@ -23,8 +23,7 @@ import ballerina/test;
 function testConfigSurfacePrefetchPolicy() returns error? {
     check drainQueue("it.config.prefetch.queue");
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "prefetch config smoke test".toBytes()},
-            {queueName: "it.config.prefetch.queue"});
+    check producer->send("prefetch config smoke test".toBytes(), {queueName: "it.config.prefetch.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -43,8 +42,7 @@ function testConfigSurfaceOptimizeAcknowledgements() returns error? {
     check drainQueue("it.config.optack.queue");
     MessageProducer producer = check new (brokerUrl,
         username = username, password = password, optimizeAcknowledgements = true);
-    check producer->send({payload: "optimizeAcknowledgements smoke test".toBytes()},
-            {queueName: "it.config.optack.queue"});
+    check producer->send("optimizeAcknowledgements smoke test".toBytes(), {queueName: "it.config.optack.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -62,8 +60,7 @@ function testConfigSurfaceSetAlwaysSessionAsync() returns error? {
     check drainQueue("it.config.async.queue");
     MessageProducer producer = check new (brokerUrl,
         username = username, password = password, setAlwaysSessionAsync = false);
-    check producer->send({payload: "setAlwaysSessionAsync smoke test".toBytes()},
-            {queueName: "it.config.async.queue"});
+    check producer->send("setAlwaysSessionAsync smoke test".toBytes(), {queueName: "it.config.async.queue"});
     check producer->close();
 
     MessageConsumer consumer = check new (brokerUrl,
@@ -96,7 +93,7 @@ function testConfigSurfaceNoLocalTopic() returns error? {
     runtime:sleep(2);
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "noLocal smoke test".toBytes()}, {topicName: "it.config.nolocal.topic"});
+    check producer->send("noLocal smoke test".toBytes(), {topicName: "it.config.nolocal.topic"});
     check producer->close();
 
     runtime:sleep(2);
@@ -137,10 +134,8 @@ function testConfigSurfaceRedeliveryPolicyDeadLetterQueue() returns error? {
     check redeliveryListener.'start();
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({
-        payload: "redelivery policy test".toBytes(),
-        properties: {"testTag": "config-redelivery-dlq"}
-    }, {queueName: "it.config.redelivery.queue"});
+    check producer->send("redelivery policy test".toBytes(), {queueName: "it.config.redelivery.queue"},
+            properties = {"testTag": "config-redelivery-dlq"});
     check producer->close();
 
     runtime:sleep(6);
@@ -187,7 +182,7 @@ function testConfigSurfaceClientIdDurableReconnect() returns error? {
     runtime:sleep(2);
 
     MessageProducer producer = check new (brokerUrl, username = username, password = password);
-    check producer->send({payload: "published while offline".toBytes()}, {topicName: "it.config.clientid.topic"});
+    check producer->send("published while offline".toBytes(), {topicName: "it.config.clientid.topic"});
     check producer->close();
 
     Listener listenerB = check new (brokerUrl, username = username, password = password, clientID = clientId);

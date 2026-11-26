@@ -21,9 +21,12 @@ package io.ballerina.lib.activemq.producer;
 import io.ballerina.lib.activemq.util.ConnectionFactoryUtils;
 import io.ballerina.lib.activemq.util.MessageMapper;
 import io.ballerina.lib.activemq.util.SessionResourceUtils;
+import io.ballerina.lib.activemq.util.SessionTransactionContext;
+import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.runtime.transactions.TransactionResourceManager;
 import jakarta.jms.Connection;
 import jakarta.jms.Destination;
 import jakarta.jms.JMSException;
@@ -47,9 +50,9 @@ public final class Actions {
         final Connection connection;
         final Session session;
         final MessageProducer producer;
-        final boolean transacted;
         final BMap<BString, Object> defaultDestination;
         final Object sessionLock = new Object();
+        final SessionTransactionContext transactionContext;
         volatile boolean closed = false;
 
         ProducerState(Connection connection, Session session, MessageProducer producer, boolean transacted,
@@ -57,8 +60,9 @@ public final class Actions {
             this.connection = connection;
             this.session = session;
             this.producer = producer;
-            this.transacted = transacted;
             this.defaultDestination = defaultDestination;
+            this.transactionContext = transacted
+                    ? new SessionTransactionContext(session, sessionLock, "producer", false) : null;
         }
     }
 
@@ -87,6 +91,11 @@ public final class Actions {
 
     public static Object send(BObject bProducer, BMap<BString, Object> bMessage, Object destinationObj) {
         return execute(bProducer, "send message", state -> {
+            // Must run on the calling strand.
+            BError transactionError = joinTransactionIfAny(state);
+            if (transactionError != null) {
+                return transactionError;
+            }
             BMap<BString, Object> destination = destinationObj instanceof BMap<?, ?> rawDest
                     ? castToDestinationMap(rawDest) : state.defaultDestination;
             if (destination == null) {
@@ -101,26 +110,21 @@ public final class Actions {
         });
     }
 
-    public static Object commit(BObject bProducer) {
-        return execute(bProducer, "commit transaction", state -> {
-            if (!state.transacted) {
-                throw new JMSException(
-                        "'commit' is only valid when the producer is configured with transacted: true");
-            }
-            state.session.commit();
-            return null;
-        });
-    }
-
-    public static Object rollback(BObject bProducer) {
-        return execute(bProducer, "rollback transaction", state -> {
-            if (!state.transacted) {
-                throw new JMSException(
-                        "'rollback' is only valid when the producer is configured with transacted: true");
-            }
-            state.session.rollback();
-            return null;
-        });
+    /** Joins the caller's transaction. A producer must be transacted inside one, and not transacted outside. */
+    private static BError joinTransactionIfAny(ProducerState state) {
+        boolean inTransaction = TransactionResourceManager.getInstance().isInTransaction();
+        SessionTransactionContext transactionContext = state.transactionContext;
+        if (transactionContext == null) {
+            return inTransaction
+                    ? createError(ACTIVEMQ_ERROR, "Cannot send inside a transaction block: the producer isn't "
+                            + "transacted. Create the producer with `transacted = true` to send in a transaction.")
+                    : null;
+        }
+        if (!inTransaction) {
+            return createError(ACTIVEMQ_ERROR, "A transacted producer can only send inside a transaction block. "
+                    + "Its messages are delivered when the block commits.");
+        }
+        return transactionContext.joinCurrentTransaction();
     }
 
     public static Object close(BObject bProducer) {
