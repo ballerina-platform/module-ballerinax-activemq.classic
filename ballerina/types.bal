@@ -246,7 +246,7 @@ public enum ConsumerType {
 # Defines the JMS session acknowledgement modes.
 public enum AcknowledgementMode {
     # Indicates that the session uses a local transaction. Settle it with a `transaction` block, or
-    # with `'commit()` or `'rollback()` outside one.
+    # with the `commit` and `rollback` methods outside one.
     SESSION_TRANSACTED,
     # Indicates that the session automatically acknowledges a client's receipt of a message
     # either when the session has successfully returned from a call to `receive` or when the
