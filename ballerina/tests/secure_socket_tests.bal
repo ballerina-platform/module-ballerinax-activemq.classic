@@ -157,7 +157,7 @@ isolated function testSSLWithCertKeyConfiguration() returns error? {
 isolated int sslTransactionsMsgCount = 0;
 
 @test:Config {
-    groups: ["ssl", "secure", "transactions"]
+    groups: ["ssl", "secure", "transaction"]
 }
 isolated function testSSLWithTransactions() returns error? {
     lock {

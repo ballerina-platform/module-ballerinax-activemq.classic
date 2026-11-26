@@ -117,7 +117,7 @@ isolated function testServiceWithCaller() returns error? {
 isolated int serviceWithTransactionsMsgCount = 0;
 
 @test:Config {
-    groups: ["service", "transactions"]
+    groups: ["service", "transaction"]
 }
 isolated function testServiceWithTransactions() returns error? {
     Service consumerSvc = @ServiceConfig {
@@ -145,7 +145,7 @@ isolated function testServiceWithTransactions() returns error? {
 isolated int ServiceWithTransactionsRollbackMsgCount = 0;
 
 @test:Config {
-    groups: ["service", "transactions"]
+    groups: ["service", "transaction"]
 }
 isolated function testServiceWithTransactionsRollback() returns error? {
     Service consumerSvc = @ServiceConfig {

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already worked. A plain `classic:Message` parameter keeps its existing behavior unchanged. A
   payload that can't be converted to the requested type is routed to `onError` instead of being
   silently dropped.
+- Added support for Ballerina `transaction` blocks in producers (`transacted: true`), and in consumers and
+  `Listener` services (`SESSION_TRANSACTED`).
 
 ### Changed
 - Moved the test-only `TestProducer` native helper out of the released `activemq.classic-native` jar into a

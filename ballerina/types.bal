@@ -80,8 +80,8 @@ public type ConnectionConfiguration record {
 
 # Configuration for an ActiveMQ message producer.
 #
-# + transacted - Enables transacted messaging. Messages are sent within a transaction context,
-#                requiring an explicit commit or rollback
+# + transacted - Sends messages as part of a `transaction` block. They are delivered on commit and
+#                discarded on rollback
 # + destination - The default destination (queue or topic) to publish to. Can be omitted and/or
 #                 overridden per call via the `destination` parameter of `MessageProducer.send()`
 public type ProducerConfiguration record {|
@@ -245,8 +245,8 @@ public enum ConsumerType {
 
 # Defines the JMS session acknowledgement modes.
 public enum AcknowledgementMode {
-    # Indicates that the session will use a local transaction which may subsequently be
-    # committed or rolled back by calling the session's `commit` or `rollback` methods.
+    # Indicates that the session uses a local transaction. Settle it with a `transaction` block, or
+    # with the `commit` and `rollback` methods outside one.
     SESSION_TRANSACTED,
     # Indicates that the session automatically acknowledges a client's receipt of a message
     # either when the session has successfully returned from a call to `receive` or when the

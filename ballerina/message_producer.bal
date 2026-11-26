@@ -54,10 +54,22 @@ public isolated client class MessageProducer {
     # check producer->send(message, {topicName: "order.events"});
     # ```
     #
+    # A transacted producer must send inside a `transaction` block. Messages are delivered on
+    # commit and discarded on rollback.
+    #
+    # ```ballerina
+    # transaction {
+    #     check producer->send(message);
+    #     check commit;
+    # }
+    # ```
+    #
     # + message - The message to send
     # + destination - The destination to send to for this call, overriding the producer's
     #                 configured default destination, if any
-    # + return - `classic:Error` if sending fails, `()` otherwise
+    # + return - `classic:Error` if sending fails, if a transacted producer sends outside a
+    #            `transaction` block or a non-transacted one sends inside, or if the producer is in
+    #            another transaction, `()` otherwise
     isolated remote function send(Message message, Destination? destination = ()) returns Error? {
         check validateMessage(message);
         return self.externSend(message, destination);
@@ -65,30 +77,6 @@ public isolated client class MessageProducer {
 
     isolated function externSend(Message message, Destination? destination) returns Error? = @java:Method {
         name: "send",
-        'class: "io.ballerina.lib.activemq.producer.Actions"
-    } external;
-
-    # Commits all messages sent since the last commit or rollback, delivering them atomically.
-    # Only valid when the producer is configured with `transacted: true`.
-    #
-    # ```ballerina
-    # check producer->'commit();
-    # ```
-    #
-    # + return - `classic:Error` if the commit fails, `()` otherwise
-    isolated remote function 'commit() returns Error? = @java:Method {
-        'class: "io.ballerina.lib.activemq.producer.Actions"
-    } external;
-
-    # Rolls back all messages sent since the last commit, discarding them without delivering them.
-    # Only valid when the producer is configured with `transacted: true`.
-    #
-    # ```ballerina
-    # check producer->'rollback();
-    # ```
-    #
-    # + return - `classic:Error` if the rollback fails, `()` otherwise
-    isolated remote function 'rollback() returns Error? = @java:Method {
         'class: "io.ballerina.lib.activemq.producer.Actions"
     } external;
 

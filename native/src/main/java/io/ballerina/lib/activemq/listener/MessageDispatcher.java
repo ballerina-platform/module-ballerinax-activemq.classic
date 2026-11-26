@@ -20,6 +20,7 @@ package io.ballerina.lib.activemq.listener;
 
 import io.ballerina.lib.activemq.util.ActiveMQDatabindingException;
 import io.ballerina.lib.activemq.util.MessageMapper;
+import io.ballerina.lib.activemq.util.SessionTransactionContext;
 import io.ballerina.runtime.api.Runtime;
 import io.ballerina.runtime.api.concurrent.StrandMetadata;
 import io.ballerina.runtime.api.creators.ValueCreator;
@@ -30,7 +31,9 @@ import io.ballerina.runtime.api.types.Type;
 import io.ballerina.runtime.api.types.TypeTags;
 import io.ballerina.runtime.api.utils.TypeUtils;
 import io.ballerina.runtime.api.values.BError;
+import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
+import io.ballerina.runtime.api.values.BString;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
 import jakarta.jms.Session;
@@ -38,7 +41,8 @@ import jakarta.jms.Session;
 import java.io.PrintStream;
 import java.util.Optional;
 
-import static io.ballerina.lib.activemq.listener.Caller.NATIVE_SESSION;
+import static io.ballerina.lib.activemq.listener.Caller.NATIVE_TRANSACTION_CONTEXT;
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.BCALLER_NAME;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_ERROR_METHOD;
 import static io.ballerina.lib.activemq.util.ActiveMQConstants.ON_MESSAGE_METHOD;
@@ -52,6 +56,7 @@ public class MessageDispatcher {
     private final Runtime ballerinaRuntime;
     private final Service nativeService;
     private final Session session;
+    private final SessionTransactionContext transactionContext;
     private final OnErrorCallback onErrorCallback = new OnErrorCallback();
 
     /**
@@ -60,11 +65,14 @@ public class MessageDispatcher {
      * @param ballerinaRuntime  the Ballerina runtime for invoking service methods
      * @param nativeService     the wrapped Ballerina service
      * @param session           the JMS session for creating caller objects
+     * @param transacted        whether the session is transacted
      */
-    MessageDispatcher(Runtime ballerinaRuntime, Service nativeService, Session session) {
+    MessageDispatcher(Runtime ballerinaRuntime, Service nativeService, Session session, boolean transacted) {
         this.ballerinaRuntime = ballerinaRuntime;
         this.nativeService = nativeService;
         this.session = session;
+        this.transactionContext = transacted
+                ? new SessionTransactionContext(session, new Object(), "service's session", true) : null;
     }
 
     /** Associates this dispatcher with its MessageReceiver, so a failing onError handler can stop delivery. */
@@ -72,7 +80,10 @@ public class MessageDispatcher {
         this.onErrorCallback.setReceiver(receiver);
     }
 
-    /** Dispatches a JMS message to onMessage; a returned error goes to onError, a panic is only logged. */
+    /**
+     * Dispatches a message to onMessage. A returned error goes to onError and a panic is logged; a transacted
+     * session is rolled back in both cases.
+     */
     public void onMessage(Message message) {
         try {
             boolean isConcurrentSafe = nativeService.isOnMessageMethodIsolated();
@@ -81,9 +92,11 @@ public class MessageDispatcher {
             Object result = ballerinaRuntime.callMethod(
                     nativeService.getConsumerService(), ON_MESSAGE_METHOD, metadata, params);
             if (result instanceof BError bError) {
+                rollbackFailedDelivery();
                 onError(bError);
             }
         } catch (BError bError) {
+            rollbackFailedDelivery();
             bError.printStackTrace();
         } catch (JMSException | ActiveMQDatabindingException e) {
             undoDelivery();
@@ -98,12 +111,23 @@ public class MessageDispatcher {
      * sessions the next commit/acknowledge would otherwise remove it.
      */
     private void undoDelivery() {
+        rollbackFailedDelivery();
         try {
-            if (session.getTransacted()) {
-                session.rollback();
-            } else if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
+            if (session.getAcknowledgeMode() == Session.CLIENT_ACKNOWLEDGE) {
                 session.recover();
             }
+        } catch (JMSException e) {
+            ERR_OUT.println("Failed to roll back the message after a processing failure: " + e.getMessage());
+        }
+    }
+
+    /** Rolls back a transacted session after onMessage fails, so the next commit doesn't acknowledge the message. */
+    private void rollbackFailedDelivery() {
+        if (transactionContext == null) {
+            return;
+        }
+        try {
+            transactionContext.rollbackUnsettled();
         } catch (JMSException e) {
             ERR_OUT.println("Failed to roll back the message after a processing failure: " + e.getMessage());
         }
@@ -136,7 +160,12 @@ public class MessageDispatcher {
                     args[idx++] = getCaller();
                     break;
                 case TypeTags.RECORD_TYPE_TAG:
-                    args[idx++] = MessageMapper.toBallerinaMessage(message, (RecordType) referredType);
+                    BMap<BString, Object> bMessage =
+                            MessageMapper.toBallerinaMessage(message, (RecordType) referredType);
+                    if (transactionContext != null) {
+                        bMessage.addNativeData(NATIVE_TRANSACTION_CONTEXT, transactionContext);
+                    }
+                    args[idx++] = bMessage;
                     break;
                 default:
                     throw new IllegalStateException("Unsupported parameter type: " + referredType);
@@ -147,13 +176,15 @@ public class MessageDispatcher {
     }
 
     /**
-     * Creates a Ballerina Caller object with the JMS session attached as native data.
+     * Creates a Ballerina Caller object with its transaction context attached as native data.
      *
      * @return the Ballerina Caller object
      */
     private BObject getCaller() {
         BObject caller = ValueCreator.createObjectValue(getModule(), BCALLER_NAME);
-        caller.addNativeData(NATIVE_SESSION, session);
+        if (transactionContext != null) {
+            caller.addNativeData(NATIVE_TRANSACTION_CONTEXT, transactionContext);
+        }
         return caller;
     }
 
@@ -174,7 +205,7 @@ public class MessageDispatcher {
                     return;
                 }
                 String message = t.getMessage() != null ? t.getMessage() : "Failed to fetch the message";
-                BError error = createError("Error", message, t);
+                BError error = createError(ACTIVEMQ_ERROR, message, t);
                 boolean isConcurrentSafe = nativeService.isOnErrorMethodIsolated();
                 StrandMetadata metadata = new StrandMetadata(isConcurrentSafe, null);
                 Object result = ballerinaRuntime.callMethod(

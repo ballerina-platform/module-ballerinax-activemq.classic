@@ -357,68 +357,6 @@ isolated function testClientReceiveWithoutSelector() returns error? {
 }
 
 @test:Config {
-    groups: ["client", "transaction"]
-}
-isolated function testClientTransactionCommit() returns error? {
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-1",
-        payload: "tx message 1".toBytes()
-    }, {queueName: "client.tx.commit.queue"});
-    check producer->send({
-        messageId: "tx-2",
-        payload: "tx message 2".toBytes()
-    }, {queueName: "client.tx.commit.queue"});
-    check producer->'commit();
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.commit.queue"});
-    Message? msg1 = check consumer->receive(5000);
-    Message? msg2 = check consumer->receive(5000);
-    check consumer->close();
-
-    test:assertTrue(msg1 is Message, "first committed message should be received");
-    test:assertTrue(msg2 is Message, "second committed message should be received");
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
-isolated function testClientTransactionRollback() returns error? {
-    check drainQueue("client.tx.rollback.queue");
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-rb-1",
-        payload: "will be discarded".toBytes()
-    }, {queueName: "client.tx.rollback.queue"});
-    check producer->'rollback();
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.rollback.queue"});
-    Message? msg = check consumer->receive(2000);
-    check consumer->close();
-    test:assertTrue(msg is (), "rolled-back message must not be delivered");
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
-isolated function testClientTransactionCloseRollsBack() returns error? {
-    check drainQueue("client.tx.close.queue");
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-close-1",
-        payload: "implicit rollback".toBytes()
-    }, {queueName: "client.tx.close.queue"});
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName: "client.tx.close.queue"});
-    Message? msg = check consumer->receive(2000);
-    check consumer->close();
-    test:assertTrue(msg is (), "closing a transaction without committing must roll back");
-}
-
-@test:Config {
     groups: ["client", "scheduler"]
 }
 function testClientScheduledDelivery() returns error? {
@@ -672,45 +610,10 @@ function testReceiveDoesNotDeadlockClose() returns error? {
 @test:Config {
     groups: ["client", "transaction"]
 }
-isolated function testClientTransactionCommitAfterCloseReturnsError() returns error? {
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->close();
-    Error? result = producer->'commit();
-    test:assertTrue(result is Error, "commit after close should return an Error, not panic");
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
 isolated function testClientTransactionDoubleCloseIdempotent() returns error? {
     MessageProducer producer = check new (BROKER_URL, transacted = true);
     check producer->close();
     do { check producer->close(); } on fail { }
-}
-
-@test:Config {
-    groups: ["client", "transaction"]
-}
-function testClientTransactionRollbackAfterSendFailure() returns error? {
-    string queueName = "client.tx.sendfailure.queue";
-    check drainQueue(queueName);
-    MessageProducer producer = check new (BROKER_URL, transacted = true);
-    check producer->send({
-        messageId: "tx-fail-1",
-        payload: "will never be committed".toBytes()
-    }, {queueName});
-
-    Error? result = producer->send({payload: "will fail".toBytes(), priority: 15}, {queueName});
-    test:assertTrue(result is Error, "sending with an invalid priority should fail, not panic");
-
-    check producer->'rollback();
-    check producer->close();
-
-    MessageConsumer consumer = check new (BROKER_URL, destination = {queueName});
-    Message? msg = check consumer->receive(2000);
-    check consumer->close();
-    test:assertTrue(msg is (),
-        "rollback after a send failure must discard the whole transaction, including the earlier message");
 }
 
 @test:Config {

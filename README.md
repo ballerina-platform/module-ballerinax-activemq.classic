@@ -170,22 +170,74 @@ check producer->send({
 }, {topicName: "order.events"});
 ```
 
-### 7. Transactional sends
+### 7. Transactions
 
-Configure the producer with `transacted: true`, then group multiple sends into a single
-atomic operation:
+Producers, listeners and consumers can take part in a Ballerina `transaction` block.
+
+**Producer.** Set `transacted` to `true` and send inside a block. Messages are delivered on commit and
+discarded on rollback.
 
 ```ballerina
 classic:MessageProducer producer = check new ("tcp://localhost:61616", transacted = true);
-check producer->send({correlationId: "tx-1", payload: "order A".toBytes()}, {queueName: "orders.queue"});
-check producer->send({correlationId: "tx-2", payload: "audit A".toBytes()}, {queueName: "audit.queue"});
-check producer->'commit();   // both messages are delivered together
-check producer->close();
+transaction {
+    check producer->send({payload: "order A".toBytes()}, {queueName: "orders.queue"});
+    check producer->send({payload: "audit A".toBytes()}, {queueName: "audit.queue"});
+    check commit;
+}
 ```
 
-Call `'rollback()` (or simply `close()` without committing) to discard all buffered
-messages. `'commit()`/`'rollback()` return a `classic:Error` if the producer wasn't
-configured with `transacted: true`.
+**Listener.** Use `sessionAckMode: SESSION_TRANSACTED` and call `acknowledge()` first in the block.
+Nothing is settled until the block commits.
+
+```ballerina
+remote function onMessage(classic:Message message, classic:Caller caller) returns error? {
+    transaction {
+        check caller->acknowledge(message);
+        check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
+        check commit;
+    }
+}
+```
+
+The session joins the block only at `acknowledge()`, so call it before any conditional logic. A
+`rollback` before `acknowledge()` doesn't cover the message. If `onMessage` returns an error or panics,
+unsettled messages are redelivered. If it returns normally without settling the message, for example
+after an early `rollback` or a caught error, call `caller->'rollback()` after the block, or the next
+commit acknowledges the message.
+
+**Consumer.** Use `ackMode: SESSION_TRANSACTED`. Receiving or acknowledging inside a block joins it.
+
+```ballerina
+classic:MessageConsumer consumer = check new ("tcp://localhost:61616",
+    ackMode = classic:SESSION_TRANSACTED, destination = {queueName: "orders.queue"});
+transaction {
+    classic:Message? message = check consumer->receive(5000);
+    if message is classic:Message {
+        check producer->send({payload: "processed".toBytes()}, {queueName: "results.queue"});
+    }
+    check commit;
+}
+```
+
+Good to know:
+- A commit or rollback covers everything the session has received since its last one, including
+  messages received before the block.
+- Producers commit first. If one fails, the rest roll back and the messages are redelivered.
+- Commits aren't atomic across sessions or with a database, so handle duplicates.
+- If ActiveMQ fails to commit, other resources in the same block, such as a database, can still commit,
+  depending on the runtime version. A message sent in that block is then lost. If the database write
+  and the message must both happen, use the outbox pattern: store the message with the database write,
+  and send it in a separate step.
+- Outside a block, transacted listeners and consumers settle with `'commit()` and `'rollback()`.
+- `receive()` on a non-transacted consumer isn't part of the block.
+
+These return a `classic:Error`:
+- sending outside a block with a transacted producer;
+- sending or acknowledging inside a block without a transacted session;
+- calling `'commit()` or `'rollback()` inside a block;
+- acknowledging another consumer's message inside a block;
+- using the same producer or consumer in two blocks at once, or a consumer inside and outside a block at
+  once.
 
 ### 8. SSL / TLS connection
 

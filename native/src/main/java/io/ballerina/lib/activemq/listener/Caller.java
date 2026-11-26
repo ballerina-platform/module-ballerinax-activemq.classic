@@ -18,15 +18,18 @@
 
 package io.ballerina.lib.activemq.listener;
 
+import io.ballerina.lib.activemq.util.MessageMapper;
+import io.ballerina.lib.activemq.util.SessionTransactionContext;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BObject;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.runtime.transactions.TransactionResourceManager;
 import jakarta.jms.JMSException;
 import jakarta.jms.Message;
-import jakarta.jms.Session;
 
 import java.util.Objects;
 
+import static io.ballerina.lib.activemq.util.ActiveMQConstants.ACTIVEMQ_ERROR;
 import static io.ballerina.lib.activemq.util.CommonUtils.createError;
 
 /**
@@ -36,64 +39,84 @@ import static io.ballerina.lib.activemq.util.CommonUtils.createError;
  * @since 0.1.0
  */
 public class Caller {
-    static final String NATIVE_MESSAGE = "native.message";
-    static final String NATIVE_SESSION = "native.session";
+    static final String NATIVE_TRANSACTION_CONTEXT = "native.transaction.context";
 
     private Caller() {
     }
 
     /**
-     * Commits the current transaction for the JMS session.
+     * Commits the JMS session. Not allowed inside a Ballerina transaction, or while one is using it.
      *
      * @param caller  the Ballerina caller object
      * @return null on success, BError on failure
      */
     public static Object commit(BObject caller) {
-        Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
-        try {
-            nativeSession.commit();
-        } catch (JMSException exception) {
-            return createError("Error",
-                    String.format("Error while committing the transaction: %s", exception.getMessage()), exception);
-        }
-        return null;
+        return settleExplicitly(caller, "commit", "Error while committing the transaction: ",
+                SessionTransactionContext::commitSession);
     }
 
     /**
-     * Rolls back the current transaction for the JMS session.
+     * Rolls back the JMS session. Not allowed inside a Ballerina transaction, or while one is using it.
      *
      * @param caller  the Ballerina caller object
      * @return null on success, BError on failure
      */
     public static Object rollback(BObject caller) {
-        Session nativeSession = (Session) caller.getNativeData(NATIVE_SESSION);
-        try {
-            nativeSession.rollback();
-        } catch (JMSException exception) {
-            return createError("Error",
-                    String.format("Error while rolling back the transaction: %s", exception.getMessage()),
-                    exception);
-        }
-        return null;
+        return settleExplicitly(caller, "roll back", "Error while rolling back the transaction: ",
+                SessionTransactionContext::rollbackSession);
     }
 
     /**
-     * Acknowledges a JMS message. Only applicable for CLIENT_ACKNOWLEDGE mode.
+     * Acknowledges a message. Inside a transaction, the session joins it and the commit acknowledges.
      *
+     * @param caller   the Ballerina caller object
      * @param message  the Ballerina message record
      * @return null on success, BError on failure
      */
-    public static Object acknowledge(BMap<BString, Object> message) {
+    public static Object acknowledge(BObject caller, BMap<BString, Object> message) {
+        // Must run on the calling strand.
+        if (TransactionResourceManager.getInstance().isInTransaction()) {
+            SessionTransactionContext transactionContext =
+                    (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
+            if (transactionContext == null) {
+                return createError(ACTIVEMQ_ERROR, "Cannot acknowledge inside a transaction block: the service's "
+                        + "session isn't transacted. Use `sessionAckMode: SESSION_TRANSACTED` to acknowledge in "
+                        + "a transaction.");
+            }
+            if (message.getNativeData(MessageMapper.NATIVE_MESSAGE) != null
+                    && message.getNativeData(NATIVE_TRANSACTION_CONTEXT) != transactionContext) {
+                return createError(ACTIVEMQ_ERROR, "Cannot acknowledge a message that another service or consumer "
+                        + "received.");
+            }
+            return transactionContext.joinCurrentTransaction();
+        }
         try {
-            Object nativeMessage = message.getNativeData(NATIVE_MESSAGE);
+            Object nativeMessage = message.getNativeData(MessageMapper.NATIVE_MESSAGE);
             if (Objects.nonNull(nativeMessage)) {
                 ((Message) nativeMessage).acknowledge();
             }
         } catch (JMSException exception) {
-            return createError("Error",
+            return createError(ACTIVEMQ_ERROR,
                     String.format("Error occurred while sending acknowledgement for the message: %s",
                             exception.getMessage()), exception);
         }
         return null;
+    }
+
+    private static Object settleExplicitly(BObject caller, String operation, String errorPrefix,
+                                           SessionTransactionContext.Settlement settlement) {
+        SessionTransactionContext transactionContext =
+                (SessionTransactionContext) caller.getNativeData(NATIVE_TRANSACTION_CONTEXT);
+        if (transactionContext == null) {
+            return createError(ACTIVEMQ_ERROR, errorPrefix + "Not a transacted session");
+        }
+        return transactionContext.settleExplicitly(operation, () -> {
+            try {
+                settlement.run(transactionContext);
+            } catch (JMSException exception) {
+                return createError(ACTIVEMQ_ERROR, errorPrefix + exception.getMessage(), exception);
+            }
+            return null;
+        });
     }
 }
